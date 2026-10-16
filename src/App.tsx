@@ -27,6 +27,7 @@ import { useRows } from "./lib/rows";
 import { SELECTION_EMPTY, selectionAll, selectionClick, selectionCollapse, selectionSingle, type SelectModifiers } from "./lib/selection";
 import { useLogSession, type LogSource, type ViewState } from "./lib/session";
 import { storedGet, storedSet } from "./lib/stored";
+import { DESKTOP_BUILD } from "./lib/desktop";
 import { useUpdateCheck } from "./lib/update-hook";
 import type { DetailResult, FileNode, LogEntry, SessionInfo } from "./lib/types";
 
@@ -977,7 +978,7 @@ export function App() {
       {aboutOpen && (
         <AboutDialog
           onCheckUpdates={
-            backend.kind === "tauri"
+            DESKTOP_BUILD && backend.kind === "tauri"
               ? async () => {
                   const outcome = await update.checkNow();
                   if (outcome.kind === "available") {
@@ -990,7 +991,7 @@ export function App() {
           onClose={() => setAboutOpen(false)}
         />
       )}
-      {update.release && <UpdateDialog onDownload={update.download} onLater={update.later} onSkip={update.skip} release={update.release} />}
+      {DESKTOP_BUILD && update.release && <UpdateDialog onDownload={update.download} onLater={update.later} onSkip={update.skip} release={update.release} />}
       {connectOpen && (
         <ConnectDialog
           initial={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}
