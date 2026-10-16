@@ -808,13 +808,15 @@ export function App() {
   } else if (!folder) {
     center = (
       <div className="placeholder">
+        <img alt="" className="splash-icon" draggable={false} height="72" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="72" />
+        <div className="splash-title">Datamine Explorer</div>
         <div>{folderError ?? "Open a file, folder or server"}</div>
         <div className="placeholder-buttons">
           <button className="primary" onClick={() => void openFolderDialog()} type="button">
-            Open Folder...
+            <KindIcon kind="folder" /> Open Folder...
           </button>
           <button onClick={() => void openFileDialog()} type="button">
-            Open File...
+            <KindIcon kind="file" /> Open File...
           </button>
           <button onClick={() => setConnectOpen(true)} type="button">
             <KindIcon kind="server" /> Connect...

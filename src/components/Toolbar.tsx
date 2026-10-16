@@ -95,8 +95,7 @@ export function Toolbar({
       <div className="toolbar-left" {...drag}>
         <div className="toolbar-group" ref={leftGroup} {...drag}>
         <button aria-label="About Datamine Explorer" className="toolbar-brand" onClick={onAbout} title="About Datamine Explorer" type="button">
-          <img alt="" className="app-icon" draggable={false} height="27" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="27" />
-          <span className="app-name">Datamine Explorer</span>
+          <img alt="" className="app-icon" draggable={false} height="22" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="22" />
         </button>
         {menus}
         {connected && (
@@ -117,7 +116,10 @@ export function Toolbar({
           <span>{label.name}</span>
         </div>
       ) : (
-        <div className="toolbar-title" {...dragDeep} />
+        // nothing open: the app's own name takes the middle
+        <div className="toolbar-title" {...dragDeep}>
+          <span>Datamine Explorer</span>
+        </div>
       )}
       <div className="toolbar-right" {...drag}>
       <div className="toolbar-group" ref={rightGroup} {...drag}>

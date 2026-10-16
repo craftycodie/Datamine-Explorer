@@ -253,8 +253,8 @@ button.toolbar-brand {
   gap: 7px;
   align-self: stretch;
   height: auto;
-  margin-right: 4px;
-  padding: 0 9px 0 6px;
+  margin-right: -2px;
+  padding: 0 4px 0 6px;
   color: var(--text);
   background: transparent;
   border: 0;
@@ -274,14 +274,21 @@ button.toolbar-brand:focus-visible {
 .app-icon {
   flex: none;
   display: block;
-  width: 27px;
-  height: 27px;
+  width: 22px;
+  height: 22px;
 }
 
-.app-name {
-  font-size: 13px;
+/* the start screen, before anything is open */
+.splash-icon {
+  display: block;
+  border-radius: 10px;
+}
+
+.splash-title {
+  margin-top: -4px;
+  font-size: 20px;
   font-weight: 600;
-  white-space: nowrap;
+  color: var(--text);
 }
 
 /* a window that has lost focus dims its title and controls */
