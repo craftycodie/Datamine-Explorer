@@ -55,6 +55,9 @@ export default defineConfig({
   define: {
     __DATAMINE_EXPLORER_BUILD__: JSON.stringify(buildInfo()),
     __DATAMINE_PACKAGE_VERSION__: JSON.stringify(datamineVersion()),
+    // Tauri sets TAURI_ENV_PLATFORM for the dev and build commands it runs; a plain vite build (the web
+    // version on Pages) gets false, so desktop-only code such as the update check is left out of it.
+    __DATAMINE_EXPLORER_DESKTOP__: JSON.stringify(Boolean(process.env.TAURI_ENV_PLATFORM)),
   },
   worker: { format: "es" },
   build: { target: "es2022", chunkSizeWarningLimit: 2000 },

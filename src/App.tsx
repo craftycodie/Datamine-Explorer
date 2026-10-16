@@ -14,6 +14,7 @@ import { PreReleaseWatermark } from "./components/PreReleaseWatermark";
 import { SessionPane } from "./components/SessionPane";
 import { Sized } from "./components/Sized";
 import { Toolbar } from "./components/Toolbar";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { ViewMenu, type Theme } from "./components/ViewMenu";
 import { BUILD_INFO } from "./build-info";
 import { backend } from "./lib/backend";
@@ -26,6 +27,7 @@ import { useRows } from "./lib/rows";
 import { SELECTION_EMPTY, selectionAll, selectionClick, selectionCollapse, selectionSingle, type SelectModifiers } from "./lib/selection";
 import { useLogSession, type LogSource, type ViewState } from "./lib/session";
 import { storedGet, storedSet } from "./lib/stored";
+import { useUpdateCheck } from "./lib/update-hook";
 import type { DetailResult, FileNode, LogEntry, SessionInfo } from "./lib/types";
 
 // The dmv. prefix (here, in columns.ts and recent.ts, and on the pane size keys below) is from the app's
@@ -81,6 +83,7 @@ export function App() {
   const [notice, setNotice] = useState<string>();
   const [connectOpen, setConnectOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const update = useUpdateCheck();
   const [folderError, setFolderError] = useState<string>();
   const [selectedPath, setSelectedPath] = useState<string>();
   const [showAll, setShowAll] = usePersisted(SHOW_ALL_KEY, false, (t) => t === "true");
@@ -971,7 +974,23 @@ export function App() {
         </button>
       </div>
       {BUILD_INFO.showWatermark && <PreReleaseWatermark overTable={rightHidden} />}
-      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+      {aboutOpen && (
+        <AboutDialog
+          onCheckUpdates={
+            backend.kind === "tauri"
+              ? async () => {
+                  const outcome = await update.checkNow();
+                  if (outcome.kind === "available") {
+                    setAboutOpen(false);
+                  }
+                  return outcome;
+                }
+              : undefined
+          }
+          onClose={() => setAboutOpen(false)}
+        />
+      )}
+      {update.release && <UpdateDialog onDownload={update.download} onLater={update.later} onSkip={update.skip} release={update.release} />}
       {connectOpen && (
         <ConnectDialog
           initial={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}

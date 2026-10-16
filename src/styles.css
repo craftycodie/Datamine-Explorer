@@ -1891,3 +1891,32 @@ button.link {
   align-items: center;
   justify-content: space-between;
 }
+
+/* the update prompt */
+.dialog.update {
+  width: 520px;
+}
+
+.update-release {
+  font-weight: 600;
+}
+
+.update-notes {
+  max-height: 260px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.about-update {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}

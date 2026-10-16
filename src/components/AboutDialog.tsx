@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BUILD_INFO } from "../build-info";
 import { clipboardWrite } from "../lib/clipboard";
 import { openExternal } from "../lib/external";
+import { manualCheckMessage, type UpdateOutcome } from "../lib/update-check";
 import { DATAMINE_VERSION, ISSUES_URL, REPOSITORY_URL } from "../lib/versions";
 
 function builtText(builtAt: string): string {
@@ -10,8 +11,10 @@ function builtText(builtAt: string): string {
 }
 
 // What this build is, and where to find the project.
-export function AboutDialog({ onClose }: { onClose: () => void }) {
+// `onCheckUpdates` is only given in the desktop app; the web build is always current.
+export function AboutDialog({ onCheckUpdates, onClose }: { onCheckUpdates?: () => Promise<UpdateOutcome>; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<{ checking: boolean; text: string }>();
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     close.current?.focus();
@@ -29,6 +32,14 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
       () => setCopied(true),
       () => undefined
     );
+  };
+  const checkUpdates = async () => {
+    if (!onCheckUpdates) {
+      return;
+    }
+    setUpdateStatus({ checking: true, text: "Checking for updates..." });
+    const outcome = await onCheckUpdates();
+    setUpdateStatus({ checking: false, text: manualCheckMessage(outcome) });
   };
   // links are buttons, so the webview never navigates away from the app
   const link = (url: string, label: string) => (
@@ -75,6 +86,14 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           {link(REPOSITORY_URL, "GitHub")}
           {link(ISSUES_URL, "Report a bug")}
         </div>
+        {onCheckUpdates && (
+          <div className="about-update">
+            <button disabled={updateStatus?.checking} onClick={() => void checkUpdates()} type="button">
+              Check for updates
+            </button>
+            {updateStatus && <span className="dim">{updateStatus.text}</span>}
+          </div>
+        )}
         <div className="about-foot">
           <span className="dim">Made by @craftycodie</span>
           <button className="primary" onClick={onClose} ref={close} type="button">
