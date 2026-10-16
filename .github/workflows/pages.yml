@@ -131,8 +131,12 @@ jobs:
               COMMIT_SHA="$OBJECT_SHA"
             fi
             echo "Tag $TAG -> commit $COMMIT_SHA"
+            # The tag's leading number is the build.yml run number: exact even when the commit was
+            # also built on another branch (main and release give different builds).
+            SEQ=$((10#${TAG%%.*}))
             RUN_ID=$(gh run list --repo "$REPO" --workflow build.yml --commit "$COMMIT_SHA" \
-              --status completed --limit 30 --json databaseId,conclusion,createdAt --jq "$PICK")
+              --status completed --limit 50 --json databaseId,number \
+              --jq "[.[] | select(.number == ${SEQ})] | .[0].databaseId // empty")
           else
             echo "Finding the latest build for branch: $BRANCH"
             RUN_ID=$(gh run list --repo "$REPO" --workflow build.yml --branch "$BRANCH" \

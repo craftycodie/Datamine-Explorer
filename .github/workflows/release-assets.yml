@@ -56,32 +56,20 @@ jobs:
           fi
           echo "Tag $TAG -> commit $COMMIT_SHA"
 
-          # Prefer a fully successful run; otherwise take the latest completed one
-          # (build.yml still tags when a platform fails, so some installers may be missing).
+          # The tag's leading number is the build.yml run number, so the run is exact even when the
+          # same commit was built on several branches (main and release give different binaries).
+          SEQ=$((10#${TAG%%.*}))
           RUN_ID=$(gh run list \
             --repo "$REPO" \
             --workflow build.yml \
             --commit "$COMMIT_SHA" \
             --status completed \
-            --limit 30 \
-            --json databaseId,conclusion,createdAt \
-            --jq '
-              (
-                [.[] | select(.conclusion == "success")]
-                | sort_by(.createdAt)
-                | reverse
-                | .[0].databaseId
-              )
-              // (
-                sort_by(.createdAt)
-                | reverse
-                | .[0].databaseId
-              )
-              // empty
-            ')
+            --limit 50 \
+            --json databaseId,number \
+            --jq "[.[] | select(.number == ${SEQ})] | .[0].databaseId // empty")
 
           if [[ -z "$RUN_ID" ]]; then
-            echo "No completed build.yml run found for commit $COMMIT_SHA"
+            echo "No completed build.yml run #$SEQ found for commit $COMMIT_SHA"
             exit 1
           fi
           echo "Using run $RUN_ID"
