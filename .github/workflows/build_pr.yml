@@ -1,0 +1,65 @@
+name: Build (PR)
+
+# Pull requests build as "untracked version": no seq, no tag, version 0.0.1.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (windows)
+    runs-on: windows-latest
+    env:
+      DATAMINE_EXPLORER_UNTRACKED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # @blamnetwork/datamine comes from npm.
+      - run: npm ci
+
+      # Build info is computed untracked, then handed to vite and the Tauri version config.
+      - name: Compute untracked build info
+        shell: bash
+        run: |
+          INFO=$(node scripts/compute-build-string.mjs)
+          echo "DATAMINE_EXPLORER_BUILD_INFO=$INFO" >> "$GITHUB_ENV"
+          node -e "require('fs').writeFileSync('tauri.version.json', JSON.stringify({ version: JSON.parse(process.argv[1]).packageVersion }))" "$INFO"
+
+      - name: Build the app
+        run: npx tauri build --config tauri.version.json
+
+      - name: Name the installer
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          NAME="datamine-explorer-pr${PR_NUMBER}-${HEAD_SHA:0:7}"
+          mkdir -p staging
+          cp src-tauri/target/release/bundle/nsis/*.exe "staging/${NAME}-setup.exe"
+          cp src-tauri/target/release/datamine-explorer.exe "staging/${NAME}.exe"
+          ls -l staging
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: datamine-explorer-windows-pr
+          path: staging/*.exe
+          if-no-files-found: error

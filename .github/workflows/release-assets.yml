@@ -1,0 +1,99 @@
+name: Release assets
+
+# When a release is published on a build tag ({seq}.{yy}.{mm}.{dd}.{hhmm}.{branch}), attach the
+# installer built by build.yml for that commit. Other tags are ignored.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Build tag to attach the installer to"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release-assets-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    name: Attach installer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve build run for the tag
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${TAG:-}" =~ ^[0-9]{5}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}\..+$ ]]; then
+            echo "Tag '${TAG:-}' is not a build string, nothing to attach"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          REF_JSON=$(gh api "repos/${REPO}/git/ref/tags/${TAG}")
+          OBJECT_TYPE=$(printf '%s' "$REF_JSON" | jq -r .object.type)
+          OBJECT_SHA=$(printf '%s' "$REF_JSON" | jq -r .object.sha)
+          if [[ "$OBJECT_TYPE" == "tag" ]]; then
+            COMMIT_SHA=$(gh api "repos/${REPO}/git/tags/${OBJECT_SHA}" --jq .object.sha)
+          else
+            COMMIT_SHA="$OBJECT_SHA"
+          fi
+          echo "Tag $TAG -> commit $COMMIT_SHA"
+
+          RUN_ID=$(gh run list \
+            --repo "$REPO" \
+            --workflow build.yml \
+            --commit "$COMMIT_SHA" \
+            --status success \
+            --limit 30 \
+            --json databaseId,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+
+          if [[ -z "$RUN_ID" ]]; then
+            echo "No successful build.yml run found for commit $COMMIT_SHA"
+            exit 1
+          fi
+          echo "Using run $RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download the installer
+        if: steps.resolve.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.resolve.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$RUN_ID" --repo "$REPO" --name datamine-explorer-windows --dir upload
+          ls -l upload
+
+      - name: Upload to the release
+        if: steps.resolve.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(upload/*.exe)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No .exe in the artifact"
+            exit 1
+          fi
+          # --repo is needed: this job has no checkout. --clobber replaces same-named assets on a re-run.
+          gh release upload "$TAG" "${files[@]}" --repo "$REPO" --clobber
+          echo "Uploaded ${#files[@]} asset(s) to $TAG"

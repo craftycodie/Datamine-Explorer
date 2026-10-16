@@ -1,0 +1,135 @@
+name: Build
+
+# Every branch push builds the app and tags the commit with its Bungie-style build string,
+# {seq}.{yy}.{mm}.{dd}.{hhmm}.{branch} (see scripts/compute-build-string.mjs).
+# Pull requests build untracked in build_pr.yml. Release assets are attached by
+# release-assets.yml when a release is published on a build tag.
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare build string
+    runs-on: ubuntu-latest
+    outputs:
+      build_string: ${{ steps.compute.outputs.build_string }}
+      build_info: ${{ steps.compute.outputs.build_info }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Compute build string
+        id: compute
+        shell: bash
+        env:
+          DATAMINE_EXPLORER_BRANCH: ${{ github.ref_name }}
+          DATAMINE_EXPLORER_SEQ: ${{ github.run_number }}
+        run: |
+          INFO=$(node scripts/compute-build-string.mjs)
+          BUILD_STRING=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).buildString)" "$INFO")
+          echo "build_info=$INFO" >> "$GITHUB_OUTPUT"
+          echo "build_string=$BUILD_STRING" >> "$GITHUB_OUTPUT"
+          echo "Computed build string: $BUILD_STRING"
+
+  build:
+    name: Build (windows)
+    needs: prepare
+    runs-on: windows-latest
+    env:
+      DATAMINE_EXPLORER_BUILD_INFO: ${{ needs.prepare.outputs.build_info }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # @blamnetwork/datamine comes from npm.
+      - run: npm ci
+
+      # The bundle version is 0.{seq}.0; tauri.conf.json and Cargo.toml keep their committed 0.1.0.
+      - name: Write Tauri version config
+        shell: bash
+        run: |
+          node -e "require('fs').writeFileSync('tauri.version.json', JSON.stringify({ version: JSON.parse(process.env.DATAMINE_EXPLORER_BUILD_INFO).packageVersion }))"
+          cat tauri.version.json
+
+      - name: Build the app
+        run: npx tauri build --config tauri.version.json
+
+      - name: Name the installer after the build string
+        shell: bash
+        env:
+          BUILD_STRING: ${{ needs.prepare.outputs.build_string }}
+        run: |
+          set -euo pipefail
+          mkdir -p staging
+          cp src-tauri/target/release/bundle/nsis/*.exe "staging/datamine-explorer-${BUILD_STRING}-setup.exe"
+          cp src-tauri/target/release/datamine-explorer.exe "staging/datamine-explorer-${BUILD_STRING}.exe"
+          ls -l staging
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: datamine-explorer-windows
+          path: staging/*.exe
+          if-no-files-found: error
+
+  tag:
+    name: Tag build
+    needs: [prepare, build]
+    # Tag even when the build fails: seq is the run number and has to stay unique per commit.
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create build tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.build_string }}
+          SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$TAG" || "$TAG" == "untracked version" ]]; then
+            echo "Refusing to tag untracked build"
+            exit 1
+          fi
+
+          if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+            exit 0
+          fi
+
+          TAG_OBJECT=$(gh api "repos/${REPO}/git/tags" \
+            -f tag="$TAG" \
+            -f message="Build $TAG" \
+            -f object="$SHA" \
+            -f type=commit)
+          TAG_SHA=$(printf '%s' "$TAG_OBJECT" | jq -r .sha)
+
+          gh api "repos/${REPO}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="$TAG_SHA"
+          echo "Tagged $SHA as $TAG"
