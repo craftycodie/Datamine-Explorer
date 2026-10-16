@@ -45,8 +45,10 @@ function datamineVersion(): string {
   return (JSON.parse(readFileSync(file, "utf8")) as { version: string }).version;
 }
 
-// Tauri expects a fixed dev port and serves dist/ when built.
+// Tauri expects a fixed dev port and serves dist/ when built. The browser build for GitHub Pages sets
+// DATAMINE_EXPLORER_BASE=./ so one build works at /<repo>/ and /<repo>/<branch>/.
 export default defineConfig({
+  base: process.env.DATAMINE_EXPLORER_BASE || "/",
   plugins: [react(), devService],
   clearScreen: false,
   server: { port: 1421, strictPort: true },

@@ -233,9 +233,15 @@ input[type="checkbox"] {
   padding: 0;
 }
 
+/* macOS draws its traffic lights over the top left of the bar: leave them room (counted in the title's centring) */
+.toolbar.mac .toolbar-left .toolbar-group {
+  padding-left: 72px;
+}
+
 /* in a browser there are no window controls to sit flush with the edge, so the right group has some room;
    it is part of what the title's centring measures */
-.toolbar:not(.desktop) .toolbar-right .toolbar-group {
+.toolbar:not(.desktop) .toolbar-right .toolbar-group,
+.toolbar.mac .toolbar-right .toolbar-group {
   padding-right: 8px;
 }
 

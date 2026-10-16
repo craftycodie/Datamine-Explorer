@@ -52,7 +52,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
       >
         <div className="about-head">
-          <img alt="" className="about-icon" draggable={false} height="64" src="/app-icon.svg" width="64" />
+          <img alt="" className="about-icon" draggable={false} height="64" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="64" />
           <div>
             <div className="about-name">Datamine Explorer</div>
             <button className="about-build" onClick={copy} title="Copy the build string" type="button">

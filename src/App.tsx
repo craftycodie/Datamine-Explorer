@@ -414,7 +414,9 @@ export function App() {
       const query = new URLSearchParams(window.location.search);
       const fromFolder = query.get("folder");
       const fromFile = query.get("file");
-      if (fromFolder) {
+      if ((fromFolder || fromFile) && !backend.pathsSupported) {
+        setNotice("A path in the address cannot be opened here. Use the File menu to pick a folder or file.");
+      } else if (fromFolder) {
         await folderOpen(fromFolder);
         if (fromFile) {
           setSelectedPath(fromFile);

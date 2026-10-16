@@ -1,0 +1,238 @@
+name: GitHub Pages
+
+# Publishes the browser version to GitHub Pages without rebuilding it: the datamine-explorer-web
+# artifact of a build.yml run is reused.
+#
+# Branch previews are deployed by build.yml right after the web bundle is built. This workflow covers:
+#   - a full (non-prerelease) GitHub release on a build tag: the site root (/)
+#   - a deleted branch: removes /<branch>/
+#   - workflow_dispatch: redeploys from an existing build run
+#
+# Layout (https://<owner>.github.io/<repo>/):
+#   /            the latest full release (prereleases do not deploy here)
+#   /<branch>/   the branch preview (from build.yml)
+#
+# Setup (once): repo Settings > Pages > Source: Deploy from a branch > gh-pages / (root).
+on:
+  delete:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deploy target"
+        type: choice
+        options:
+          - auto
+          - root
+          - branch
+        default: auto
+      tag:
+        description: "Build tag (required when the target is root)"
+        required: false
+        type: string
+      branch:
+        description: "Branch name (optional when the target is branch; default: this ref)"
+        required: false
+        type: string
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  deploy:
+    name: Deploy
+    if: |
+      (github.event_name == 'release' && !github.event.release.prerelease) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve the deploy target
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TARGET: ${{ github.event.inputs.target || 'auto' }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode=
+          tag=
+          branch=
+          if [[ "$EVENT" == "release" || "$INPUT_TARGET" == "root" ]]; then
+            mode=root
+            tag="${RELEASE_TAG:-$INPUT_TAG}"
+            if [[ ! "$tag" =~ ^[0-9]{5}\.[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}\..+$ ]]; then
+              echo "Tag '$tag' is not a build string, nothing to deploy"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            mode=branch
+            branch="${INPUT_BRANCH:-$REF_NAME}"
+            case "$branch" in
+              docs|assets|gh-pages|.github|"")
+                echo "Branch name '$branch' is reserved or empty."
+                exit 1
+                ;;
+            esac
+          fi
+          {
+            echo "skip=false"
+            echo "mode=$mode"
+            echo "tag=$tag"
+            echo "branch=$branch"
+          } >> "$GITHUB_OUTPUT"
+          echo "mode=$mode tag=${tag:--} branch=${branch:--}"
+
+      - name: Download datamine-explorer-web
+        if: steps.target.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          MODE: ${{ steps.target.outputs.mode }}
+          TAG: ${{ steps.target.outputs.tag }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer a fully successful run; otherwise the latest completed one (the web bundle may
+          # be fine when a platform build failed). The download fails if the run has no web artifact.
+          PICK='
+            (
+              [.[] | select(.conclusion == "success")]
+              | sort_by(.createdAt)
+              | reverse
+              | .[0].databaseId
+            )
+            // (
+              sort_by(.createdAt)
+              | reverse
+              | .[0].databaseId
+            )
+            // empty'
+
+          if [[ "$MODE" == "root" ]]; then
+            echo "Resolving commit for tag: $TAG"
+            REF_JSON=$(gh api "repos/${REPO}/git/ref/tags/${TAG}")
+            OBJECT_TYPE=$(printf '%s' "$REF_JSON" | jq -r .object.type)
+            OBJECT_SHA=$(printf '%s' "$REF_JSON" | jq -r .object.sha)
+            if [[ "$OBJECT_TYPE" == "tag" ]]; then
+              COMMIT_SHA=$(gh api "repos/${REPO}/git/tags/${OBJECT_SHA}" --jq .object.sha)
+            else
+              COMMIT_SHA="$OBJECT_SHA"
+            fi
+            echo "Tag $TAG -> commit $COMMIT_SHA"
+            RUN_ID=$(gh run list --repo "$REPO" --workflow build.yml --commit "$COMMIT_SHA" \
+              --status completed --limit 30 --json databaseId,conclusion,createdAt --jq "$PICK")
+          else
+            echo "Finding the latest build for branch: $BRANCH"
+            RUN_ID=$(gh run list --repo "$REPO" --workflow build.yml --branch "$BRANCH" \
+              --status completed --limit 30 --json databaseId,conclusion,createdAt --jq "$PICK")
+          fi
+
+          if [[ -z "$RUN_ID" ]]; then
+            echo "No completed build.yml run found for this deploy."
+            exit 1
+          fi
+          echo "Using build run $RUN_ID"
+          mkdir -p dist
+          gh run download "$RUN_ID" --repo "$REPO" --name datamine-explorer-web --dir dist
+          if [[ ! -f dist/index.html ]]; then
+            echo "datamine-explorer-web is missing index.html"
+            find dist -maxdepth 3 -type f | head -n 50 || true
+            exit 1
+          fi
+          echo "Fetched datamine-explorer-web ($(du -sh dist | cut -f1))"
+
+      - name: Deploy branch preview
+        if: steps.target.outputs.skip == 'false' && steps.target.outputs.mode == 'branch'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: dist
+          destination_dir: ${{ steps.target.outputs.branch }}
+          keep_files: true
+          force_orphan: false
+
+      - name: Deploy release root
+        if: steps.target.outputs.skip == 'false' && steps.target.outputs.mode == 'root'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: dist
+          keep_files: true
+          force_orphan: false
+
+  cleanup-branch:
+    name: Cleanup deleted branch
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+        continue-on-error: true
+
+      - name: Remove the branch path
+        id: remove
+        env:
+          BRANCH: ${{ github.event.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BRANCH" in
+            docs|assets|gh-pages|.github|"")
+              echo "Skipping cleanup for reserved or empty ref: '$BRANCH'"
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          if [[ ! -d site ]]; then
+            echo "gh-pages branch does not exist yet; nothing to clean."
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ ! -e "site/$BRANCH" ]]; then
+            echo "No Pages path for deleted branch '$BRANCH'."
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Removing site/$BRANCH"
+          rm -rf "site/$BRANCH"
+          # a branch like feature/x leaves feature/ behind when it was the last one in it
+          parent=$(dirname "$BRANCH")
+          while [[ "$parent" != "." && "$parent" != "/" ]]; do
+            if [[ -d "site/$parent" ]] && [[ -z "$(ls -A "site/$parent")" ]]; then
+              rmdir "site/$parent"
+              parent=$(dirname "$parent")
+            else
+              break
+            fi
+          done
+
+          rm -rf site/.git
+          touch site/.nojekyll
+          echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the cleaned site
+        if: steps.remove.outputs.should_deploy == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site
+          force_orphan: false
+          keep_files: false

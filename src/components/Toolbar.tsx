@@ -64,6 +64,8 @@ export function Toolbar({
 }) {
   // In the desktop app the window has no frame of its own: this bar is its title bar.
   const desktop = backend.kind === "tauri";
+  // macOS keeps its own traffic lights (tauri.macos.conf.json), drawn over the left of this bar
+  const mac = desktop && navigator.userAgent.includes("Macintosh");
   const { focused, maximized } = useWindowState();
   // Where the attribute is clicked itself it drags the window, and a double click maximizes it. "deep" also
   // takes the clicks on what is inside, which the title needs.
@@ -89,11 +91,11 @@ export function Toolbar({
     return () => observer.disconnect();
   }, []);
   return (
-    <div className={`toolbar${desktop ? " desktop" : ""}${desktop && !focused ? " inactive" : ""}`} ref={bar} {...drag}>
+    <div className={`toolbar${desktop ? " desktop" : ""}${mac ? " mac" : ""}${desktop && !focused ? " inactive" : ""}`} ref={bar} {...drag}>
       <div className="toolbar-left" {...drag}>
         <div className="toolbar-group" ref={leftGroup} {...drag}>
         <button aria-label="About Datamine Explorer" className="toolbar-brand" onClick={onAbout} title="About Datamine Explorer" type="button">
-          <img alt="" className="app-icon" draggable={false} height="27" src="/app-icon.svg" width="27" />
+          <img alt="" className="app-icon" draggable={false} height="27" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="27" />
           <span className="app-name">Datamine Explorer</span>
         </button>
         {menus}
@@ -124,7 +126,7 @@ export function Toolbar({
       </button>
       <PaneToggle onToggle={onLeftToggle} shortcut="Ctrl+B" shown={leftShown} side="left" />
       <PaneToggle onToggle={onRightToggle} shortcut="Ctrl+Alt+B" shown={rightShown} side="right" />
-      {desktop && <WindowControls maximized={maximized} />}
+      {desktop && !mac && <WindowControls maximized={maximized} />}
       </div>
       </div>
     </div>

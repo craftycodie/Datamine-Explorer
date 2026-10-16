@@ -1,14 +1,19 @@
 name: Release assets
 
 # When a release is published on a build tag ({seq}.{yy}.{mm}.{dd}.{hhmm}.{branch}), attach the
-# installer built by build.yml for that commit. Other tags are ignored.
+# installers built by build.yml for that commit:
+#   1. resolve the tag to its commit and that commit's build.yml run
+#   2. download the run's artifacts
+#   3. collect the installers of every platform, named <platform>__<name>
+#   4. upload them to the release
+# Other tags are ignored. The web build is not attached; pages.yml publishes it.
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Build tag to attach the installer to"
+        description: "Build tag to attach the installers to"
         required: true
         type: string
 
@@ -22,7 +27,7 @@ concurrency:
 
 jobs:
   attach:
-    name: Attach installer
+    name: Attach installers
     runs-on: ubuntu-latest
     steps:
       - name: Resolve build run for the tag
@@ -51,23 +56,38 @@ jobs:
           fi
           echo "Tag $TAG -> commit $COMMIT_SHA"
 
+          # Prefer a fully successful run; otherwise take the latest completed one
+          # (build.yml still tags when a platform fails, so some installers may be missing).
           RUN_ID=$(gh run list \
             --repo "$REPO" \
             --workflow build.yml \
             --commit "$COMMIT_SHA" \
-            --status success \
+            --status completed \
             --limit 30 \
-            --json databaseId,createdAt \
-            --jq 'sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+            --json databaseId,conclusion,createdAt \
+            --jq '
+              (
+                [.[] | select(.conclusion == "success")]
+                | sort_by(.createdAt)
+                | reverse
+                | .[0].databaseId
+              )
+              // (
+                sort_by(.createdAt)
+                | reverse
+                | .[0].databaseId
+              )
+              // empty
+            ')
 
           if [[ -z "$RUN_ID" ]]; then
-            echo "No successful build.yml run found for commit $COMMIT_SHA"
+            echo "No completed build.yml run found for commit $COMMIT_SHA"
             exit 1
           fi
           echo "Using run $RUN_ID"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Download the installer
+      - name: Download the artifacts
         if: steps.resolve.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,8 +96,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh run download "$RUN_ID" --repo "$REPO" --name datamine-explorer-windows --dir upload
-          ls -l upload
+          mkdir -p artifacts
+          gh run download "$RUN_ID" --repo "$REPO" --dir artifacts
+          find artifacts -type f | sort | head -n 80
+
+      - name: Collect the installers
+        if: steps.resolve.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+
+          is_installer() {
+            case "$1" in
+              *.exe|*.dmg|*.app.tar.gz|*.deb|*.rpm|*.AppImage) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          # each platform's artifact is datamine-explorer-<platform>; the web build is not an installer
+          for dir in artifacts/datamine-explorer-*; do
+            [[ -d "$dir" ]] || continue
+            platform=${dir#artifacts/datamine-explorer-}
+            [[ "$platform" == "web" ]] && continue
+            while IFS= read -r -d '' f; do
+              base=$(basename "$f")
+              case "$base" in
+                *.blockmap|*.sig) continue ;;
+              esac
+              is_installer "$base" || continue
+              cp -f "$f" "upload/${platform}__${base}"
+              echo "Queued ${platform}__${base}"
+            done < <(find "$dir" -type f -print0)
+          done
+
+          if [[ -z "$(ls -A upload)" ]]; then
+            echo "No installers in the build artifacts."
+            exit 1
+          fi
+          ls -lh upload
 
       - name: Upload to the release
         if: steps.resolve.outputs.skip == 'false'
@@ -89,11 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(upload/*.exe)
-          if [[ ${#files[@]} -eq 0 ]]; then
-            echo "No .exe in the artifact"
-            exit 1
-          fi
+          files=(upload/*)
           # --repo is needed: this job has no checkout. --clobber replaces same-named assets on a re-run.
           gh release upload "$TAG" "${files[@]}" --repo "$REPO" --clobber
           echo "Uploaded ${#files[@]} asset(s) to $TAG"

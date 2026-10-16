@@ -40,7 +40,16 @@ Datamine Explorer opens both kinds, and anything else written in those formats.
 
 ## Download
 
-Builds for Windows are attached to the [releases](https://github.com/craftycodie/Datamine-Explorer/releases).
+Builds for Windows, macOS and Linux are attached to the [releases](https://github.com/craftycodie/Datamine-Explorer/releases):
+- **Windows:** the setup `.exe`, or the portable `.exe`.
+- **macOS** (Apple Silicon): the `.dmg`, or the `.app` as a `.app.tar.gz`.
+- **Linux:** `.deb`, `.rpm` or `.AppImage`.
+
+The macOS and Windows builds are not signed. On macOS, Gatekeeper will say the app cannot be opened: Control-click the app, choose Open, then Open again. If it says the app is damaged, run `xattr -cr "/Applications/Datamine Explorer.app"` once.
+
+## Try it in the browser
+
+[craftycodie.github.io/Datamine-Explorer](https://craftycodie.github.io/Datamine-Explorer/) runs the latest release in your browser, with nothing to install. Use Chrome or Edge for folder access: they can watch a folder and show new lines as they are written. Other browsers open a folder or file as a snapshot that does not update. Connecting to a server works in any browser.
 
 ## Keyboard
 

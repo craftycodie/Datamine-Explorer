@@ -22,6 +22,9 @@ export interface Backend {
   listTree(root: string): Promise<FileNode[]>;
   // Opens `root` as a single file; reads work for that file alone.
   fileInfo(root: string): Promise<FileNode>;
+  // Whether a path can be opened by name: always on the desktop, in a browser only through the dev
+  // server. A static build (GitHub Pages) has no /api, so it opens things by picking them.
+  pathsSupported: boolean;
   // What a typed path is.
   pathKind(path: string): Promise<"file" | "folder" | "missing">;
   readRange(path: string, offset: number, length: number): Promise<Uint8Array>;
@@ -74,6 +77,7 @@ function tauriBackend(): Backend {
   return {
     isPathRoot: () => true,
     kind: "tauri",
+    pathsSupported: true,
     async listTree(root) {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<FileNode[]>("list_tree", { root });
@@ -176,7 +180,13 @@ function tauriBackend(): Backend {
 
 // --- dev server (path based)
 
+// Only the vite dev server mounts /api; a built site has nothing there.
+const DEV_SERVICE = import.meta.env.DEV;
+
 async function api<T>(route: string, query: Record<string, string | number>): Promise<T> {
+  if (!DEV_SERVICE) {
+    throw new Error("opening a path needs the dev server; pick a folder or file instead");
+  }
   const url = `/api/${route}?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`;
   const response = await fetch(url);
   if (!response.ok) {
@@ -600,6 +610,7 @@ function browserBackend(): Backend {
       previous = nodesFlatten(tree);
       return tree;
     },
+    pathsSupported: DEV_SERVICE,
     note: () => {
       if (source.mode === "snapshot") {
         return "folder read as a snapshot, it does not update";
