@@ -25,16 +25,21 @@ export function ContextMenu({ items, onClose, x, y }: { items: ContextMenuItem[]
   useEffect(() => {
     const from = document.activeElement as HTMLElement | null;
     menu.current?.focus();
-    const onDown = (event: MouseEvent) => {
+    // capture phase, so a click anywhere closes it even where a handler stops the event (the table's rows do)
+    const onDown = (event: Event) => {
       if (!menu.current?.contains(event.target as Node)) {
         onClose();
       }
     };
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("contextmenu", onDown, true);
+    document.addEventListener("wheel", onDown, { capture: true, passive: true });
     window.addEventListener("blur", onClose);
     window.addEventListener("resize", onClose);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("contextmenu", onDown, true);
+      document.removeEventListener("wheel", onDown, { capture: true });
       window.removeEventListener("blur", onClose);
       window.removeEventListener("resize", onClose);
       from?.focus?.();
