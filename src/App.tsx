@@ -18,6 +18,7 @@ import { UpdateDialog } from "./components/UpdateDialog";
 import { ViewMenu, type Theme } from "./components/ViewMenu";
 import { BUILD_INFO } from "./build-info";
 import { backend } from "./lib/backend";
+import { embeddedView } from "./lib/embedded";
 import { clipboardWrite } from "./lib/clipboard";
 import { useColumns } from "./lib/columns";
 import { filtersActive, filtersDefault, matcherBuild, type Filters, type SearchSpec } from "./lib/filter";
@@ -814,6 +815,12 @@ export function App() {
       <div className="placeholder">
         <img alt="" className="splash-icon" draggable={false} height="72" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="72" />
         <div className="splash-title">Datamine Explorer</div>
+        {backend.kind !== "tauri" && embeddedView() && (
+          <div className="splash-warning">
+            This embedded browser view can't read files from your disk, so opening a file or folder may fail. Open
+            this page in Chrome or Edge, or use the desktop app. Connecting to a server works here.
+          </div>
+        )}
         <div>{folderError ?? "Open a file, folder or server"}</div>
         <div className="placeholder-buttons">
           <button className="primary" onClick={() => void openFolderDialog()} type="button">

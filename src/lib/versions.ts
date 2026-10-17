@@ -6,3 +6,4 @@ export const DATAMINE_VERSION = typeof __DATAMINE_PACKAGE_VERSION__ === "undefin
 
 export const REPOSITORY_URL = "https://github.com/craftycodie/Datamine-Explorer";
 export const ISSUES_URL = `${REPOSITORY_URL}/issues/new`;
+export const DOWNLOAD_URL = `${REPOSITORY_URL}/releases/latest`;

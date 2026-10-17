@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { backend } from "../lib/backend";
+import { openExternal } from "../lib/external";
+import { DOWNLOAD_URL } from "../lib/versions";
 import type { RecentKind } from "../lib/recent";
 import { KindIcon } from "./FileMenu";
 import { WindowControls, useWindowState } from "./WindowControls";
@@ -29,6 +31,14 @@ function InfoIcon() {
       <circle cx="8" cy="8" fill="none" r="6.3" stroke="currentColor" strokeWidth="1.2" />
       <path d="M8 7.2v4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.4" />
       <circle cx="8" cy="4.9" fill="currentColor" r="0.95" />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg aria-hidden="true" height="14" viewBox="0 0 16 16" width="14">
+      <path d="M8 2.2v7.6 M4.8 6.8 8 10l3.2-3.2 M2.8 11.6v1.9h10.4v-1.9" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
     </svg>
   );
 }
@@ -123,6 +133,13 @@ export function Toolbar({
       )}
       <div className="toolbar-right" {...drag}>
       <div className="toolbar-group" ref={rightGroup} {...drag}>
+      {backend.kind !== "tauri" && (
+        // in a browser, point people at the desktop app
+        <button className="download-app" onClick={() => void openExternal(DOWNLOAD_URL)} title="Download the desktop app" type="button">
+          <DownloadIcon />
+          Download
+        </button>
+      )}
       <button aria-label="About" className="icon-toggle" onClick={onAbout} title="About Datamine Explorer" type="button">
         <InfoIcon />
       </button>

@@ -143,6 +143,29 @@ button:disabled {
   cursor: default;
 }
 
+/* the web version's call to get the desktop app: green so it reads apart from the toolbar's other buttons */
+button.download-app {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  color: #ffffff;
+  font-weight: 600;
+  background: #238636;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+}
+
+button.download-app:hover:not(:disabled) {
+  background: #2ea043;
+}
+
+button.download-app:focus-visible {
+  outline: 2px solid #3fb950;
+  outline-offset: 1px;
+}
+
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -282,6 +305,18 @@ button.toolbar-brand:focus-visible {
 .splash-icon {
   display: block;
   border-radius: 10px;
+}
+
+/* shown on the start screen in embedded views (VS Code's Simple Browser) that cannot read picked files */
+.splash-warning {
+  max-width: 460px;
+  padding: 8px 12px;
+  color: var(--text);
+  line-height: 1.45;
+  text-align: center;
+  background: rgba(232, 179, 65, 0.12);
+  border: 1px solid rgba(232, 179, 65, 0.55);
+  border-radius: 6px;
 }
 
 .splash-title {

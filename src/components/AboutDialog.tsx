@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BUILD_INFO } from "../build-info";
 import { clipboardWrite } from "../lib/clipboard";
+import { DESKTOP_BUILD } from "../lib/desktop";
 import { openExternal } from "../lib/external";
 import { manualCheckMessage, type UpdateOutcome } from "../lib/update-check";
 import { DATAMINE_VERSION, ISSUES_URL, REPOSITORY_URL } from "../lib/versions";
@@ -86,7 +87,7 @@ export function AboutDialog({ onCheckUpdates, onClose }: { onCheckUpdates?: () =
           {link(REPOSITORY_URL, "GitHub")}
           {link(ISSUES_URL, "Report a bug")}
         </div>
-        {onCheckUpdates && (
+        {DESKTOP_BUILD && onCheckUpdates && (
           <div className="about-update">
             <button disabled={updateStatus?.checking} onClick={() => void checkUpdates()} type="button">
               Check for updates
