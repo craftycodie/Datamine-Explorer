@@ -1,3 +1,4 @@
+import { translate } from "../localization";
 import { backend } from "./backend";
 
 // Puts text on the clipboard. The desktop app has a plugin for it; a browser needs a secure page and
@@ -25,6 +26,6 @@ export async function clipboardWrite(text: string): Promise<void> {
   area.remove();
   from?.focus?.();
   if (!done) {
-    throw new Error("the browser did not allow copying");
+    throw new Error(translate("clipboard_refused"));
   }
 }

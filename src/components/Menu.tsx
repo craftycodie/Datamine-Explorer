@@ -12,6 +12,9 @@ export interface MenuAction {
   // one of a group of which one is on
   radio?: boolean;
   run: () => void;
+  // a cross on the right, shown on the item the pointer or the keys are on, that takes it out of the menu
+  // (the Delete key does the same); the menu stays open
+  remove?: { label: string; run: () => void };
 }
 
 export type MenuEntry = { kind: "action"; action: MenuAction } | { kind: "separator"; id: string } | { kind: "heading"; id: string; label: string };
@@ -91,6 +94,15 @@ export function Menu({ entries, id, label }: { entries: MenuEntry[]; id: string;
         setOpen(false);
         button.current?.focus();
         break;
+      case "Delete": {
+        const remove = actions[active]?.remove;
+        if (!remove) {
+          return;
+        }
+        remove.run();
+        setActive(Math.max(0, Math.min(active, last - 1)));
+        break;
+      }
       case "Tab":
         setOpen(false);
         return;
@@ -148,6 +160,21 @@ export function Menu({ entries, id, label }: { entries: MenuEntry[]; id: string;
                 <span className="menu-icon-slot">{action.checked ? "✓" : action.icon}</span>
                 <span className="menu-label">{action.label}</span>
                 {action.hint && <span className="menu-hint">{action.hint}</span>}
+                {action.remove && (
+                  <button
+                    aria-label={action.remove.label}
+                    className="item-remove"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      action.remove?.run();
+                    }}
+                    tabIndex={-1}
+                    title={action.remove.label}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           })}

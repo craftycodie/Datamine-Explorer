@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState } from "react";
 import { dateTimeText, isViewable, pathKey, sizeText } from "../lib/format";
 import type { FileNode } from "../lib/types";
+import { useT } from "../localization";
 import { Chevron } from "./Chevron";
 import { FilesIcon } from "./Icons";
 
@@ -64,6 +65,7 @@ export function FileTree({
   single?: boolean;
   tree: FileNode[];
 }) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const visible = useMemo(() => (showAll || single ? tree : prune(tree)), [showAll, single, tree]);
   const rows = useMemo(() => flatten(visible, collapsed), [visible, collapsed]);
@@ -89,25 +91,25 @@ export function FileTree({
       <div className="pane-header">
         <span className="pane-title">
           <FilesIcon />
-          {single ? "File" : "Files"}
+          {t(single ? "tree_file" : "tree_files")}
         </span>
         {!single && (
           <>
-            <label className="check" title="Show files of any type">
+            <label className="check" title={t("tree_all_title")}>
               <input checked={showAll} onChange={(e) => onShowAll(e.target.checked)} type="checkbox" />
-              all
+              {t("tree_all")}
             </label>
-            <button onClick={() => setCollapsed(new Set(allDirectories(visible)))} title="Collapse all folders" type="button">
+            <button onClick={() => setCollapsed(new Set(allDirectories(visible)))} title={t("tree_collapse")} type="button">
               -
             </button>
-            <button onClick={() => setCollapsed(new Set())} title="Expand all folders" type="button">
+            <button onClick={() => setCollapsed(new Set())} title={t("tree_expand")} type="button">
               +
             </button>
           </>
         )}
       </div>
       <div className="filetree-scroll" ref={scroller}>
-        {root && rows.length === 0 && <div className="empty">No {showAll ? "files" : "viewable files"} here.</div>}
+        {root && rows.length === 0 && <div className="empty">{t(showAll ? "tree_empty_all" : "tree_empty_viewable")}</div>}
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((item) => {
             const { depth, node } = rows[item.index];

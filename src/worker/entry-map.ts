@@ -1,8 +1,6 @@
 // Turns the datamine package's entries into the explorer's own shape, and decodes file bytes.
-import { k_datamine_parameter_type_names, k_log_source_format_names, type s_log_entry } from "@blamnetwork/datamine/reading";
+import { k_datamine_parameter_type_names, type s_log_entry } from "@blamnetwork/datamine/reading";
 import type { LogEntry } from "../lib/types";
-
-export const FORMAT_NAMES: Record<string, string> = k_log_source_format_names;
 
 export function parameterTypeName(type: number): string {
   return (k_datamine_parameter_type_names as Record<number, string>)[type] ?? String(type);

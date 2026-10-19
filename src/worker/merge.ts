@@ -565,10 +565,10 @@ export class MergeEngine {
     sessions.sort((a, b) => a.id - b.id);
     this.emit({ id: this.id, stats: { categories: [...categories], count, firstTime, lastTime, levelCounts, sessions }, type: "stats" });
     const notes = this.members.flatMap((member) => [
-      ...(member.failed ? [`${member.spec.name}: ${member.failed}`] : []),
-      ...(member.meta?.notes ?? []).map((note) => `${member.spec.name}: ${note}`),
+      ...(member.failed ? [{ source: member.spec.name, text: member.failed }] : []),
+      ...(member.meta?.notes ?? []).map((note) => ({ ...note, source: member.spec.name })),
     ]);
-    const meta: SessionMeta = { format: `${this.members.length} sources`, notes };
+    const meta: SessionMeta = { format: { key: this.members.length === 1 ? "format_sources_one" : "format_sources_other", params: { count: this.members.length } }, notes };
     const signature = JSON.stringify(meta);
     if (signature !== this.lastMeta) {
       this.lastMeta = signature;

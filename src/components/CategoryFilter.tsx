@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type CategoryNode, categoryTreeBuild, type Filters } from "../lib/filter";
+import { type CategoryNode, categoryTreeBuild, type Filters, NO_CATEGORY } from "../lib/filter";
+import { useT } from "../localization";
 import { Chevron } from "./Chevron";
 import { MinusIcon, PlusIcon, SearchIcon, TagIcon } from "./Icons";
 
@@ -56,6 +57,7 @@ export function CategoryFilter({
   onFilters: (filters: Filters) => void;
   version: number;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set());
   // the row the keys act on
@@ -169,15 +171,15 @@ export function CategoryFilter({
       <div className="pane-header">
         <span className="pane-title">
           <TagIcon />
-          Categories
+          {t("categories_heading")}
         </span>
         <button
           disabled={active === 0}
           onClick={() => onFilters({ ...filters, exclude: [], include: [] })}
-          title="Clear category filters"
+          title={t("categories_clear_title")}
           type="button"
         >
-          clear
+          {t("categories_clear")}
         </button>
       </div>
       <div className="cat-search">
@@ -185,12 +187,12 @@ export function CategoryFilter({
         <input
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-          placeholder="Find a category"
+          placeholder={t("categories_find")}
           spellCheck={false}
           value={query}
         />
         {query && (
-          <button aria-label="Clear the search" className="cat-search-clear" onClick={() => setQuery("")} title="Clear" type="button">
+          <button aria-label={t("categories_find_clear")} className="cat-search-clear" onClick={() => setQuery("")} title={t("categories_find_clear_title")} type="button">
             <svg aria-hidden="true" height="10" viewBox="0 0 10 10" width="10">
               <path d="M2 2 8 8 M8 2 2 8" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
             </svg>
@@ -198,7 +200,7 @@ export function CategoryFilter({
         )}
       </div>
       <div className="categories-scroll" onKeyDown={onKeyDown} ref={scroller} role="tree" tabIndex={0}>
-        {rows.length === 0 && <div className="empty">No categories.</div>}
+        {rows.length === 0 && <div className="empty">{t("categories_empty")}</div>}
         {rows.map(({ depth, node }) => {
           const mode = modeOf(filters, node.path);
           const expanded = needle !== "" || open.has(node.path);
@@ -235,11 +237,11 @@ export function CategoryFilter({
                 open={expanded}
               />
               <span className="cat-name" title={node.path}>
-                <Highlighted needle={needle} text={node.segment} />
+                <Highlighted needle={needle} text={node.path === NO_CATEGORY ? t("category_none") : node.segment} />
               </span>
               <span className="cat-count">{node.total.toLocaleString()}</span>
               <button
-                aria-label="Show only this category"
+                aria-label={t("categories_include")}
                 aria-pressed={mode === "include"}
                 className={mode === "include" ? "cat-mode include on" : "cat-mode include"}
                 onClick={(e) => {
@@ -248,13 +250,13 @@ export function CategoryFilter({
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
                 tabIndex={-1}
-                title="Show only this category and its children"
+                title={t("categories_include_title")}
                 type="button"
               >
                 <PlusIcon />
               </button>
               <button
-                aria-label="Hide this category"
+                aria-label={t("categories_exclude")}
                 aria-pressed={mode === "exclude"}
                 className={mode === "exclude" ? "cat-mode exclude on" : "cat-mode exclude"}
                 onClick={(e) => {
@@ -263,7 +265,7 @@ export function CategoryFilter({
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
                 tabIndex={-1}
-                title="Hide this category and its children"
+                title={t("categories_exclude_title")}
                 type="button"
               >
                 <MinusIcon />

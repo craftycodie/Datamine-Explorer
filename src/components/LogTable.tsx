@@ -9,6 +9,7 @@ import type { DividerResult } from "../worker/protocol";
 import { ContextMenu } from "./ContextMenu";
 import { Highlight } from "./Highlight";
 import { MessageScrollbar } from "./MessageScrollbar";
+import { useT } from "../localization";
 
 // One line of text; a row is this tall until it is measured to be taller.
 const ROW_HEIGHT = 20;
@@ -28,7 +29,6 @@ const JUMP_PASSES = 4;
 // Scrolls this soon after a wheel turn are the wheel's (smooth scrolling spreads one turn out).
 const WHEEL_SETTLE_MS = 500;
 
-const COLUMN_LABELS: Record<ColumnId, string> = { category: "category", index: "index", level: "level", source: "source", time: "time" };
 
 // The text a column shows for an entry, for fitting its width.
 function cellText(id: ColumnId, entry: LogEntry): string {
@@ -61,11 +61,12 @@ export interface ScrollRequest {
 }
 
 function Divider({ entry }: { entry: LogEntry }) {
+  const t = useT();
   const session = entry.session;
   return (
     <>
       {entry.source && <span className="divider-source">{entry.source}</span>}
-      <span className="divider-title">Session {session?.number}</span>
+      <span className="divider-title">{t("divider_session", { number: session?.number ?? "" })}</span>
       <span className="divider-version">{session?.version}</span>
       {session?.sessionId && <span className="divider-id">{session.sessionId}</span>}
       <span className="divider-time">{entry.time ? dateTimeText(entry.time) : ""}</span>
@@ -128,6 +129,7 @@ export function LogTable({
   // long messages take several lines
   wrap: boolean;
 }) {
+  const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const columnIds = showSource ? SOURCE_COLUMN_IDS : COLUMN_IDS;
@@ -522,7 +524,7 @@ export function LogTable({
       return;
     }
     context.font = getComputedStyle(element).font;
-    let widest = context.measureText(COLUMN_LABELS[id]).width;
+    let widest = context.measureText(t(`column_${id}`)).width;
     for (let row = first; row < Math.min(count, first + visible + 1); row++) {
       const entry = rows.get(row);
       if (entry && entry.kind !== "session") {
@@ -597,7 +599,7 @@ export function LogTable({
         <span className="cell-time">{timeColumnText(entry.timeText)}</span>
         <span className="cell-index">{entry.eventIndex ?? entry.ordinal}</span>
         <span>
-          <span className={`badge level-${entry.level}`} title={entry.levelText || LEVEL_NAMES[entry.level]}>
+          <span className={`badge level-${entry.level}`} title={entry.level >= 0 ? t(`level_${LEVEL_NAMES[entry.level]}`) : entry.levelText}>
             {LEVEL_SHORT[entry.level] ?? (entry.levelText || "?").slice(0, 4).toUpperCase()}
           </span>
         </span>
@@ -651,19 +653,19 @@ export function LogTable({
       <div className="log-header log-grid">
         {columnIds.map((id) => (
           <span key={id}>
-            {COLUMN_LABELS[id]}
+            {t(`column_${id}`)}
             <span
-              aria-label={`resize ${id} column`}
+              aria-label={t("column_resize", { column: t(`column_${id}`) })}
               className="col-handle"
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={() => fit(id)}
               onPointerDown={(e) => dragStart(id, e)}
               role="separator"
-              title="Drag to resize, double-click to fit"
+              title={t("column_resize_title")}
             />
           </span>
         ))}
-        <span>message</span>
+        <span>{t("column_message")}</span>
       </div>
       {pinned}
       <div className="log-body" ref={body} style={{ height: spacer }}>
@@ -673,9 +675,9 @@ export function LogTable({
       {menu && (
         <ContextMenu
           items={[
-            { hint: "Ctrl+C", id: "copy", label: "Copy", run: () => onCopy("raw") },
-            { id: "message", label: "Copy message only", run: () => onCopy("message") },
-            { hint: "Ctrl+A", id: "all", label: "Select all", run: onSelectAll },
+            { hint: "Ctrl+C", id: "copy", label: t("table_copy"), run: () => onCopy("raw") },
+            { id: "message", label: t("table_copy_message"), run: () => onCopy("message") },
+            { hint: "Ctrl+A", id: "all", label: t("table_select_all"), run: onSelectAll },
           ]}
           onClose={closeMenu}
           x={menu.x}

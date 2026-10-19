@@ -2,6 +2,7 @@
 // the writer that spools them to disk, and the numbers the Session pane shows (state, rate, memory).
 // The engine reads the spool back like any other file; nothing of the text stays here.
 import type { LiveState, LiveStatus } from "../lib/types";
+import type { Text } from "../localization";
 import { LiveConnection } from "./live-connection";
 import { BACKLOG_ALL, BACKLOG_MARGIN, LiveSession, type ResumeState, runOf } from "./live-session";
 import { SPOOL_FORMAT } from "./spool-line";
@@ -69,7 +70,7 @@ async function resumeStateOf(opened: SpoolOpened): Promise<ResumeState> {
 export class LiveFeed {
   state: LiveState = "connecting";
   readonly session: LiveSession;
-  private error: string | undefined;
+  private error: Text | undefined;
   private prefix: string | undefined;
   private connection: LiveConnection;
   private writer: SpoolWriter;
@@ -90,7 +91,7 @@ export class LiveFeed {
       spool as SpoolHost,
       () => this.spoolStart(),
       {
-        failed: (message) => this.fail(`the spool could not be written: ${message}`),
+        failed: (message) => this.fail({ key: "live_error_spool", params: { error: message } }),
         grown: async () => {
           await hooks.grown();
           this.statusEmit();
@@ -174,7 +175,7 @@ export class LiveFeed {
     void this.connection.start();
   }
 
-  private fail(message: string) {
+  private fail(message: Text) {
     this.connection.close();
     this.state = "closed";
     this.error = message;

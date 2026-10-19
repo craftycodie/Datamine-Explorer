@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { baseName } from "../lib/format";
-import { recentLabel, recentTitle, type RecentItem } from "../lib/recent";
+import { recentLabel, type RecentItem } from "../lib/recent";
+import { useT } from "../localization";
 import { KindIcon } from "./FileMenu";
+import { RecentList } from "./RecentList";
 
 // One source as the dialog gives it back. `root` is what the backend opens a file by.
 export interface SourceDraft {
@@ -47,6 +49,7 @@ export function SourcesDialog({
   onCancel,
   onPickFile,
   onRecent,
+  onRecentRemove,
   onSubmit,
   recents,
   serverDefault,
@@ -58,12 +61,14 @@ export function SourcesDialog({
   onPickFile: () => Promise<string | undefined>;
   // gives the root of a recent file (a browser asks for access again), nothing when it cannot be had
   onRecent: (item: RecentItem) => Promise<string | undefined>;
+  onRecentRemove: (item: RecentItem) => void;
   onSubmit: (sources: SourceDraft[]) => void;
   recents: RecentItem[];
   serverDefault: string;
   // nicknames and targets of the sources open already
   taken: { names: string[]; targets: string[] };
 }) {
+  const t = useT();
   const [rows, setRows] = useState<Row[]>(() => (mode === "open" ? [rowEmpty(), rowEmpty()] : [rowEmpty()]));
   const [error, setError] = useState<string>();
   const first = useRef<HTMLInputElement>(null);
@@ -101,7 +106,7 @@ export function SourcesDialog({
     const kind = item.kind === "server" ? "server" : "file";
     const target = kind === "server" ? item.target : await onRecent(item);
     if (!target) {
-      setError(`Could not open ${recentLabel(item)}.`);
+      setError(t("sources_dialog_recent_failed", { name: recentLabel(item) }));
       return;
     }
     // the nickname it had last time, if it was opened this way before
@@ -120,20 +125,20 @@ export function SourcesDialog({
     const names = new Set(taken.names.map((name) => name.toLowerCase()));
     const targets = new Set(taken.targets);
     for (const [k, row] of rows.entries()) {
-      const which = rows.length > 1 ? `Source ${k + 1}` : "The source";
+      const which = rows.length > 1 ? t("sources_dialog_which", { number: k + 1 }) : t("sources_dialog_which_one");
       const target = row.target.trim();
       if (!target) {
-        return `${which} needs ${row.kind === "file" ? "a file" : "a server address"}.`;
+        return t(row.kind === "file" ? "sources_dialog_needs_file" : "sources_dialog_needs_server", { which });
       }
       const name = row.name.trim();
       if (!name) {
-        return `${which} needs a nickname.`;
+        return t("sources_dialog_needs_name", { which });
       }
       if (names.has(name.toLowerCase())) {
-        return `There is already a source called ${name}.`;
+        return t("sources_dialog_name_taken", { name });
       }
       if (targets.has(target)) {
-        return `${row.kind === "file" ? baseName(target) : target} is open already.`;
+        return t("sources_dialog_open_already", { target: row.kind === "file" ? baseName(target) : target });
       }
       names.add(name.toLowerCase());
       targets.add(target);
@@ -153,7 +158,7 @@ export function SourcesDialog({
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div
-        aria-label={mode === "open" ? "Open multiple sources" : "Add a source"}
+        aria-label={t(mode === "open" ? "sources_dialog_open" : "sources_dialog_add")}
         aria-modal="true"
         className="dialog sources-dialog"
         onKeyDown={(e) => {
@@ -167,13 +172,9 @@ export function SourcesDialog({
         role="dialog"
       >
         <div className="dialog-title">
-          <KindIcon kind="sources" /> {mode === "open" ? "Open multiple sources" : "Add a source"}
+          <KindIcon kind="sources" /> {t(mode === "open" ? "sources_dialog_open" : "sources_dialog_add")}
         </div>
-        <div className="hint">
-          {mode === "open"
-            ? "Files and servers shown in one feed, in time order. Each needs a nickname for the source column."
-            : "Shown in the feed with the others, in time order. It needs a nickname for the source column."}
-        </div>
+        <div className="hint">{t(mode === "open" ? "sources_dialog_open_hint" : "sources_dialog_add_hint")}</div>
         <div className="source-rows">
           {rows.map((row, k) => (
             <div className="source-row" key={row.id}>
@@ -184,7 +185,7 @@ export function SourcesDialog({
                     className={row.kind === kind ? "active" : undefined}
                     key={kind}
                     onClick={() => row.kind !== kind && change(row.id, { kind, target: kind === "server" ? serverDefault : "" })}
-                    title={kind === "file" ? "A log or datamine file" : "A datamine event server"}
+                    title={t(kind === "file" ? "sources_dialog_kind_file" : "sources_dialog_kind_server")}
                     type="button"
                   >
                     <KindIcon kind={kind} />
@@ -192,21 +193,21 @@ export function SourcesDialog({
                 ))}
               </div>
               <input
-                aria-label={`Source ${k + 1} nickname`}
+                aria-label={t("sources_dialog_nickname_aria", { number: k + 1 })}
                 className="source-name"
                 onChange={(e) => change(row.id, { name: e.target.value })}
-                placeholder="nickname"
+                placeholder={t("sources_dialog_nickname")}
                 ref={k === 0 ? first : undefined}
                 spellCheck={false}
                 value={row.name}
               />
               {row.kind === "file" ? (
                 <button className="source-target" onClick={() => void pick(row.id)} title={row.target || "Choose a file"} type="button">
-                  {row.target ? baseName(row.target) : "Choose file..."}
+                  {row.target ? baseName(row.target) : t("sources_dialog_choose")}
                 </button>
               ) : (
                 <input
-                  aria-label={`Source ${k + 1} server URL`}
+                  aria-label={t("sources_dialog_url_aria", { number: k + 1 })}
                   className="source-target"
                   onChange={(e) => change(row.id, { target: e.target.value })}
                   placeholder={serverDefault}
@@ -215,7 +216,13 @@ export function SourcesDialog({
                 />
               )}
               {mode === "open" && rows.length > 2 ? (
-                <button aria-label={`Remove source ${k + 1}`} className="source-remove" onClick={() => setRows(rows.filter((other) => other.id !== row.id))} title="Remove" type="button">
+                <button
+                  aria-label={t("sources_dialog_remove", { number: k + 1 })}
+                  className="source-remove"
+                  onClick={() => setRows(rows.filter((other) => other.id !== row.id))}
+                  title={t("sources_dialog_remove_title")}
+                  type="button"
+                >
                   ×
                 </button>
               ) : (
@@ -227,29 +234,18 @@ export function SourcesDialog({
         {mode === "open" && (
           <div>
             <button onClick={() => setRows([...rows, rowEmpty()])} type="button">
-              Add another
+              {t("sources_dialog_another")}
             </button>
           </div>
         )}
-        {usable.length > 0 && (
-          <div className="recent-list sources-recent">
-            <div className="dim">Recent</div>
-            {usable.map((item) => (
-              <button key={`${item.kind}-${item.target}`} onClick={() => void recentUse(item)} title={recentTitle(item)} type="button">
-                <KindIcon kind={item.kind} />
-                {item.nickname && <span className="recent-nickname">{item.nickname}</span>}
-                {recentLabel(item)}
-              </button>
-            ))}
-          </div>
-        )}
+        <RecentList className="sources-recent" items={usable} onOpen={(item) => void recentUse(item)} onRemove={onRecentRemove} />
         {error && <div className="dialog-error">{error}</div>}
         <div className="dialog-buttons">
           <button className="primary" onClick={submit} type="button">
-            {mode === "open" ? "Open" : "Add"}
+            {t(mode === "open" ? "sources_dialog_open_button" : "sources_dialog_add_button")}
           </button>
           <button onClick={onCancel} type="button">
-            Cancel
+            {t("common_cancel")}
           </button>
         </div>
       </div>

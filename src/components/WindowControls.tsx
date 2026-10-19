@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { backend } from "../lib/backend";
+import { useT } from "../localization";
 
 // Whether the desktop window is maximized and has focus. A browser tab is neither managed nor drawn, so it
 // reads as focused and not maximized.
@@ -51,23 +52,25 @@ function Glyph({ kind }: { kind: "close" | "maximize" | "minimize" | "restore" }
 }
 
 export function WindowControls({ maximized }: { maximized: boolean }) {
+  const t = useT();
   const win = getCurrentWindow();
+  const resize = t(maximized ? "window_restore" : "window_maximize");
   return (
     <div className="window-controls">
-      <button aria-label="Minimize" className="caption" onClick={() => void win.minimize()} tabIndex={-1} title="Minimize" type="button">
+      <button aria-label={t("window_minimize")} className="caption" onClick={() => void win.minimize()} tabIndex={-1} title={t("window_minimize")} type="button">
         <Glyph kind="minimize" />
       </button>
       <button
-        aria-label={maximized ? "Restore" : "Maximize"}
+        aria-label={resize}
         className="caption"
         onClick={() => void win.toggleMaximize()}
         tabIndex={-1}
-        title={maximized ? "Restore" : "Maximize"}
+        title={resize}
         type="button"
       >
         <Glyph kind={maximized ? "restore" : "maximize"} />
       </button>
-      <button aria-label="Close" className="caption close" onClick={() => void win.close()} tabIndex={-1} title="Close" type="button">
+      <button aria-label={t("common_close")} className="caption close" onClick={() => void win.close()} tabIndex={-1} title={t("common_close")} type="button">
         <Glyph kind="close" />
       </button>
     </div>

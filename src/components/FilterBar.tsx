@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import type { Filters, SearchSpec } from "../lib/filter";
 import { LEVEL_NAMES, type LogStats, type SearchStatus } from "../lib/types";
-
+import { type Text, textOf, translate, useT } from "../localization";
 import { SearchIcon } from "./Icons";
 
 const LEVEL_LETTERS = ["V", "S", "M", "W", "E", "C"];
@@ -10,9 +10,9 @@ function matchText(status: SearchStatus, current: number): string {
   const total = status.matches.toLocaleString();
   switch (status.state) {
     case "running":
-      return `searching... ${Math.floor(status.progress * 100)}% · ${total}`;
+      return translate("search_running", { percent: Math.floor(status.progress * 100), total });
     case "waiting":
-      return status.matches > 0 ? `${total}+` : "waiting for the index...";
+      return status.matches > 0 ? `${total}+` : translate("search_waiting");
     case "done":
       return `${current.toLocaleString()} / ${total}`;
     default:
@@ -47,11 +47,12 @@ export function FilterBar({
   onSearch: (search: SearchSpec) => void;
   onlyMatches: boolean;
   search: SearchSpec;
-  searchError?: string;
+  searchError?: Text;
   searchRef: RefObject<HTMLInputElement | null>;
   searchStatus: SearchStatus;
   stats: LogStats;
 }) {
+  const t = useT();
   const toggleLevel = (level: number, only: boolean) => {
     const levels = only ? filters.levels.map((_, i) => i === level) : filters.levels.map((on, i) => (i === level ? !on : on));
     onFilters({ ...filters, levels });
@@ -62,14 +63,15 @@ export function FilterBar({
         {LEVEL_NAMES.map((name, level) => {
           const on = filters.levels[level];
           const count = stats.levelCounts[level].toLocaleString();
+          const named = { count, level: t(`level_${name}`) };
           return (
             <button
-              aria-label={`${name}, ${count} entries, ${on ? "shown" : "hidden"}`}
+              aria-label={t(on ? "chip_aria_shown" : "chip_aria_hidden", named)}
               aria-pressed={on}
               className={`chip level-${level}${on ? " on" : ""}`}
               key={name}
               onClick={(e) => toggleLevel(level, e.ctrlKey || e.metaKey)}
-              title={`${name}: ${count} entries${on ? "" : " (hidden)"} (Ctrl+click shows only this level)`}
+              title={t(on ? "chip_title_shown" : "chip_title_hidden", named)}
               type="button"
             >
               {LEVEL_LETTERS[level]}
@@ -78,9 +80,9 @@ export function FilterBar({
         })}
       </div>
       <div className="search">
-        <label className="check" title="Keep the newest row in view as entries arrive (End)">
+        <label className="check" title={t("follow_tail_title")}>
           <input checked={follow} onChange={(e) => onFollow(e.target.checked)} type="checkbox" />
-          follow tail
+          {t("follow_tail")}
         </label>
         <div className="search-field">
           <SearchIcon />
@@ -94,17 +96,17 @@ export function FilterBar({
                 onSearch({ ...search, text: "" });
               }
             }}
-            placeholder="Search (Ctrl+F)"
+            placeholder={t("search_placeholder")}
             ref={searchRef}
             spellCheck={false}
-            title={searchError}
+            title={searchError && textOf(searchError)}
             value={search.text}
           />
         </div>
         <button
           className={search.caseSensitive ? "toggle on" : "toggle"}
           onClick={() => onSearch({ ...search, caseSensitive: !search.caseSensitive })}
-          title="Match case"
+          title={t("search_case")}
           type="button"
         >
           Aa
@@ -112,7 +114,7 @@ export function FilterBar({
         <button
           className={search.regex ? "toggle on" : "toggle"}
           onClick={() => onSearch({ ...search, regex: !search.regex })}
-          title="Regular expression"
+          title={t("search_regex")}
           type="button"
         >
           .*
@@ -120,19 +122,19 @@ export function FilterBar({
         <button
           className={onlyMatches ? "toggle on" : "toggle"}
           onClick={() => onOnlyMatches(!onlyMatches)}
-          title="Show only matching rows"
+          title={t("search_only_title")}
           type="button"
         >
-          only
+          {t("search_only")}
         </button>
-        <button disabled={searchStatus.matches === 0} onClick={() => onMatchStep(-1)} title="Previous match (Shift+F3)" type="button">
+        <button disabled={searchStatus.matches === 0} onClick={() => onMatchStep(-1)} title={t("search_previous")} type="button">
           {"▲"}
         </button>
-        <button disabled={searchStatus.matches === 0} onClick={() => onMatchStep(1)} title="Next match (F3)" type="button">
+        <button disabled={searchStatus.matches === 0} onClick={() => onMatchStep(1)} title={t("search_next")} type="button">
           {"▼"}
         </button>
         <span className="match-count">
-          {searchError ? "bad pattern" : search.text ? matchText(searchStatus, matchCurrent) : ""}
+          {searchError ? t("search_bad_pattern") : search.text ? matchText(searchStatus, matchCurrent) : ""}
         </span>
       </div>
     </div>

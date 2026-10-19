@@ -1,6 +1,7 @@
 // The link to a datamine event server: finds the server's prefix, follows its Server-Sent Events
 // stream and comes back when it drops. What the events mean is up to the caller (live-session.ts).
 import type { LiveState } from "../lib/types";
+import type { Message, Text } from "../localization";
 import { BACKLOG_ALL, type HelloVerdict } from "./live-session";
 import type { ServerEntry, ServerHello, ServerSession } from "./live-types";
 
@@ -10,8 +11,15 @@ const RETRY_MS = 3000;
 const PROTOCOL = 1;
 const DEFAULT_PREFIX = "/datamine";
 
+// A connection failure the UI words in its language.
+class LiveError extends Error {
+  constructor(readonly text: Message) {
+    super(text.key);
+  }
+}
+
 export interface LiveEvents {
-  state(state: LiveState, error?: string): void;
+  state(state: LiveState, error?: Text): void;
   // The server is found. Gives how many entries to ask for; the caller may look for a log to carry on in first.
   prefix(prefix: string, info: ServerHello): Promise<number>;
   // `resumed`: the stream came back on its own and sent a Last-Event-ID. `requested`: the backlog it was opened with.
@@ -33,25 +41,25 @@ async function prefixFind(typed: string): Promise<{ prefix: string; info: Server
   const base = urlClean(typed);
   const path = new URL(base).pathname.replace(/\/+$/, "");
   const candidates = path === "" ? [`${base}${DEFAULT_PREFIX}`, base] : [base, `${base}${DEFAULT_PREFIX}`];
-  let failure = "";
+  let failure: Message | undefined;
   for (const prefix of candidates) {
     try {
       const response = await fetch(`${prefix}/info`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
       if (!response.ok) {
-        failure ||= `${prefix}/info answered ${response.status}`;
+        failure ??= { key: "live_error_status", params: { status: response.status, url: `${prefix}/info` } };
         continue;
       }
       const info = (await response.json()) as Partial<ServerHello>;
       if (info.protocol !== PROTOCOL) {
-        failure = `${prefix} speaks protocol ${String(info.protocol)}, this explorer reads ${PROTOCOL}`;
+        failure = { key: "live_error_protocol", params: { mine: PROTOCOL, prefix, theirs: String(info.protocol) } };
         continue;
       }
       return { info: info as ServerHello, prefix };
     } catch (error) {
-      failure ||= `cannot reach ${prefix}/info: ${error instanceof Error ? error.message : String(error)}`;
+      failure ??= { key: "live_error_unreachable", params: { error: error instanceof Error ? error.message : String(error), url: `${prefix}/info` } };
     }
   }
-  throw new Error(failure);
+  throw new LiveError(failure ?? { key: "live_error_unreachable", params: { error: "", url: base } });
 }
 
 function parsed<T>(event: Event): T | undefined {
@@ -87,7 +95,7 @@ export class LiveConnection {
       this.backlog = await this.on.prefix(found.prefix, found.info);
     } catch (error) {
       if (!this.closed) {
-        this.on.state("closed", error instanceof Error ? error.message : String(error));
+        this.on.state("closed", error instanceof LiveError ? error.text : error instanceof Error ? error.message : String(error));
       }
       return;
     }
@@ -139,7 +147,7 @@ export class LiveConnection {
       if (source.readyState === EventSource.CLOSED) {
         source.close();
         if (!this.everLive) {
-          this.on.state("closed", `${this.prefix}/events was refused`);
+          this.on.state("closed", { key: "live_error_refused", params: { url: `${this.prefix}/events` } });
           return;
         }
         this.on.state("reconnecting");

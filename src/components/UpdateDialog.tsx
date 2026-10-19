@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { BUILD_INFO } from "../build-info";
 import type { ReleaseInfo } from "../lib/update-check";
+import { useT } from "../localization";
 
 function dateText(publishedAt: string): string {
   const date = new Date(publishedAt);
@@ -21,6 +22,7 @@ export function UpdateDialog({
   onSkip: () => void;
   release: ReleaseInfo;
 }) {
+  const t = useT();
   const download = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     download.current?.focus();
@@ -29,7 +31,7 @@ export function UpdateDialog({
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onLater()}>
       <div
-        aria-label="Update available"
+        aria-label={t("update_title")}
         aria-modal="true"
         className="dialog update"
         onKeyDown={(e) => {
@@ -40,28 +42,28 @@ export function UpdateDialog({
         }}
         role="dialog"
       >
-        <div className="dialog-title">Update available</div>
+        <div className="dialog-title">{t("update_title")}</div>
         <dl className="about-fields">
-          <dt>Current</dt>
+          <dt>{t("update_current")}</dt>
           <dd>{currentBuild}</dd>
-          <dt>New</dt>
+          <dt>{t("update_new")}</dt>
           <dd>{release.tagName}</dd>
         </dl>
         <div className="update-release">
           {release.name}
           {date && <span className="dim"> · {date}</span>}
-          {release.prerelease && <span className="dim"> · pre-release</span>}
+          {release.prerelease && <span className="dim"> · {t("update_prerelease")}</span>}
         </div>
-        <pre className="update-notes">{release.body || "No release notes."}</pre>
+        <pre className="update-notes">{release.body || t("update_no_notes")}</pre>
         <div className="dialog-buttons">
           <button className="primary" onClick={onDownload} ref={download} type="button">
-            Download
+            {t("update_download")}
           </button>
           <button onClick={onSkip} type="button">
-            Skip this version
+            {t("update_skip")}
           </button>
           <button onClick={onLater} type="button">
-            Later
+            {t("update_later")}
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 // The main thread's end of the log worker: sends its requests, answers its file reads from the
 // backend, and hands back what it reports.
 import type { CallRequest, CallResult, WorkerRequest, WorkerResponse } from "../worker/protocol";
+import { translate } from "../localization";
 import { backend } from "./backend";
 import type { Filters, SearchSpec } from "./filter";
 import type { SourceSpec } from "./types";
@@ -14,7 +15,7 @@ export class LogClient {
     this.worker = new Worker(new URL("../worker/log.worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => this.receive(event.data);
     this.worker.onerror = (event) => {
-      this.onMessage({ id: -1, message: `the log worker failed: ${event.message}`, type: "error" });
+      this.onMessage({ id: -1, message: translate("worker_failed", { error: event.message }), type: "error" });
     };
   }
 

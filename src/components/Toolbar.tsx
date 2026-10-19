@@ -2,18 +2,20 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { backend } from "../lib/backend";
 import { openExternal } from "../lib/external";
 import { DOWNLOAD_URL } from "../lib/versions";
+import { useT } from "../localization";
 import { type IconKind, KindIcon } from "./FileMenu";
 import { WindowControls, useWindowState } from "./WindowControls";
 
 // A button that shows or hides a side pane; pressed while the pane is shown.
 function PaneToggle({ onToggle, shortcut, shown, side }: { onToggle: () => void; shortcut: string; shown: boolean; side: "left" | "right" }) {
+  const t = useT();
   return (
     <button
-      aria-label={`${side} pane`}
+      aria-label={t(`pane_${side}`)}
       aria-pressed={shown}
       className={shown ? "icon-toggle on" : "icon-toggle"}
       onClick={onToggle}
-      title={`${shown ? "Hide" : "Show"} the ${side} pane (${shortcut})`}
+      title={t(`pane_${side}_${shown ? "hide" : "show"}`, { shortcut })}
       type="button"
     >
       <svg aria-hidden="true" height="14" viewBox="0 0 16 16" width="14">
@@ -71,6 +73,7 @@ export function Toolbar({
   onSave: () => void;
   rightShown: boolean;
 }) {
+  const t = useT();
   // In the desktop app the window has no frame of its own: this bar is its title bar.
   const desktop = backend.kind === "tauri";
   // macOS keeps its own traffic lights (tauri.macos.conf.json), drawn over the left of this bar
@@ -103,18 +106,18 @@ export function Toolbar({
     <div className={`toolbar${desktop ? " desktop" : ""}${mac ? " mac" : ""}${desktop && !focused ? " inactive" : ""}`} ref={bar} {...drag}>
       <div className="toolbar-left" {...drag}>
         <div className="toolbar-group" ref={leftGroup} {...drag}>
-        <button aria-label="About Datamine Explorer" className="toolbar-brand" onClick={onAbout} title="About Datamine Explorer" type="button">
+        <button aria-label={t("about_title")} className="toolbar-brand" onClick={onAbout} title={t("about_title")} type="button">
           <img alt="" className="app-icon" draggable={false} height="22" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="22" />
         </button>
         {menus}
         {connected && (
           <button onClick={onDisconnect} type="button">
-            Disconnect
+            {t("toolbar_disconnect")}
           </button>
         )}
         {canSave && (
           <button onClick={onSave} type="button">
-            Save as...
+            {t("toolbar_save_as")}
           </button>
         )}
         </div>
@@ -134,12 +137,12 @@ export function Toolbar({
       <div className="toolbar-group" ref={rightGroup} {...drag}>
       {backend.kind !== "tauri" && (
         // in a browser, point people at the desktop app
-        <button className="download-app" onClick={() => void openExternal(DOWNLOAD_URL)} title="Download the desktop app" type="button">
+        <button className="download-app" onClick={() => void openExternal(DOWNLOAD_URL)} title={t("toolbar_download_title")} type="button">
           <DownloadIcon />
-          Download
+          {t("toolbar_download")}
         </button>
       )}
-      <button aria-label="About" className="icon-toggle" onClick={onAbout} title="About Datamine Explorer" type="button">
+      <button aria-label={t("toolbar_about")} className="icon-toggle" onClick={onAbout} title={t("about_title")} type="button">
         <InfoIcon />
       </button>
       <PaneToggle onToggle={onLeftToggle} shortcut="Ctrl+B" shown={leftShown} side="left" />

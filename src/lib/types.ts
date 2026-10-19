@@ -1,5 +1,6 @@
 // The explorer's own shapes. The worker maps the datamine package's entries onto these,
 // so the UI never touches the package directly.
+import type { MessageKey, Text } from "../localization";
 
 export interface FileNode {
   path: string;
@@ -73,16 +74,22 @@ export interface ReportFolderInfo {
 }
 
 export interface SessionMeta {
-  format: string;
+  format: Text;
   bannerVersion?: string;
   sessionId?: string;
   // label/value rows of the datamine header
-  header?: [string, string][];
+  header?: [MessageKey, string][];
   // label/value rows of the server a live log was taken from, read from its sidecar
-  server?: [string, string][];
+  server?: [MessageKey, string][];
   reportFolder?: ReportFolderInfo;
   // read problems the parser reported, e.g. a truncated datamine file
-  notes: string[];
+  notes: Note[];
+}
+
+// A problem the reader ran into, and which of several sources it was in.
+export interface Note {
+  text: Text;
+  source?: string;
 }
 
 export interface LogStats {
@@ -166,7 +173,7 @@ export interface LiveStatus {
   // the server's resolved prefix, e.g. http://127.0.0.1:32557/datamine
   prefix?: string;
   state: LiveState;
-  error?: string;
+  error?: Text;
   name?: string;
   version?: string;
   sessionId?: string;
@@ -199,7 +206,7 @@ export type SourceState = "loading" | "ready" | "failed" | LiveState;
 export interface SourceStatus {
   key: string;
   state: SourceState;
-  error?: string;
+  error?: Text;
   // events held, not counting dividers
   entries: number;
   // a server's resolved prefix

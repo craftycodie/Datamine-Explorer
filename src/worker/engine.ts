@@ -12,10 +12,11 @@ import {
 } from "@blamnetwork/datamine/reading";
 import type { Filters, SearchSpec } from "../lib/filter";
 import { baseName } from "../lib/format";
-import type { DetailResult, FileStat, LiveStatus, LogEntry, ReportFolderInfo, SearchStatus, SessionMeta, StatsSnapshot } from "../lib/types";
+import type { DetailResult, FileStat, LiveStatus, LogEntry, Note, ReportFolderInfo, SearchStatus, SessionMeta, StatsSnapshot } from "../lib/types";
+import type { MessageKey, Text } from "../localization";
 import { DatamineIndexer } from "./datamine-indexer";
 import { EntryIndex } from "./entry-index";
-import { entryMap, FORMAT_NAMES } from "./entry-map";
+import { entryMap } from "./entry-map";
 import { LiveFeed, type SpoolOpened } from "./live-feed";
 import type { IdRange } from "../lib/selection";
 import type { CallRequest, DividerResult, RawResult, RowsResult, WorkerResponse } from "./protocol";
@@ -59,33 +60,38 @@ function reportFolderOf(path: string): ReportFolderInfo | undefined {
   }
 }
 
-function headerRows(header: s_log_datamine_header): [string, string][] {
-  const rows: [string, string][] = [
-    ["session id", header.sessionid],
-    ["build", `${header.build_string} (${header.build_number})`],
-    ["system id", header.systemid],
-    ["title", header.title],
-    ["start date", header.session_start_date ? header.session_start_date.toLocaleString() : ""],
-    ["layout", header.layout],
-    ["byte order", header.byte_order],
+// A format by name, for the UI to say in its language.
+function formatText(format: t_log_text_format | "datamine_binary" | "datamine_upload" | "empty" | "plain_text"): Text {
+  return { key: `format_${format}` };
+}
+
+function headerRows(header: s_log_datamine_header): [MessageKey, string][] {
+  const rows: [MessageKey, string][] = [
+    ["field_session_id", header.sessionid],
+    ["field_build", `${header.build_string} (${header.build_number})`],
+    ["field_system_id", header.systemid],
+    ["field_title", header.title],
+    ["field_start_date", header.session_start_date ? header.session_start_date.toLocaleString() : ""],
+    ["field_layout", header.layout],
+    ["field_byte_order", header.byte_order],
   ];
   return rows.filter(([, value]) => value !== "");
 }
 
 // What the sidecar says of the server the log was taken from.
-function serverRows(sidecar: Sidecar): [string, string][] | undefined {
+function serverRows(sidecar: Sidecar): [MessageKey, string][] | undefined {
   const hello = sidecar.hello;
   if (!hello) {
     return;
   }
-  const rows: [string, string][] = [
-    ["server", sidecar.spool?.prefix ?? ""],
-    ["name", hello.name ?? ""],
-    ["version", hello.version_string],
-    ["session id", hello.session_id ?? ""],
-    ["system id", hello.system_id ?? ""],
-    ["build", hello.build_string ?? ""],
-    ["started", hello.started_ms ? new Date(hello.started_ms).toLocaleString() : ""],
+  const rows: [MessageKey, string][] = [
+    ["field_server", sidecar.spool?.prefix ?? ""],
+    ["field_name", hello.name ?? ""],
+    ["field_version", hello.version_string],
+    ["field_session_id", hello.session_id ?? ""],
+    ["field_system_id", hello.system_id ?? ""],
+    ["field_build", hello.build_string ?? ""],
+    ["field_started", hello.started_ms ? new Date(hello.started_ms).toLocaleString() : ""],
   ];
   return rows.filter(([, value]) => value !== "");
 }
@@ -125,9 +131,9 @@ export class LogEngine {
   private modifiedMs = 0;
   private identity = new Uint8Array(0);
   private meta: SessionMeta | undefined;
-  private notes: string[] = [];
-  private headerRows: [string, string][] | undefined;
-  private formatName = "";
+  private notes: Note[] = [];
+  private headerRows: [MessageKey, string][] | undefined;
+  private formatName: Text = "";
   // indexing or catching up with the file; the search waits for it
   private busy = false;
   private refreshQueued = false;
@@ -236,7 +242,7 @@ export class LogEngine {
       await this.loadUpload(generation);
     } else {
       const text = TEXT_FORMATS.includes(format ?? "") ? (format as t_log_text_format) : undefined;
-      this.formatName = text ? FORMAT_NAMES[text] : head.length === 0 ? "Empty" : "Plain text";
+      this.formatName = formatText(text ?? (head.length === 0 ? "empty" : "plain_text"));
       await this.loadText(generation, text);
     }
   }
@@ -301,7 +307,7 @@ export class LogEngine {
     this.kind = "datamine";
     const datamine = new DatamineIndexer(this.index);
     this.datamine = datamine;
-    this.formatName = FORMAT_NAMES.datamine_binary;
+    this.formatName = formatText("datamine_binary");
     await datamine.init(this.source(), this.size);
     const header = log_header_from_datamine(datamine.layout.header);
     this.headerRows = headerRows(header);
@@ -322,9 +328,9 @@ export class LogEngine {
     }
     this.notes = [];
     if (datamine.brokenAt !== undefined) {
-      this.notes.push(`A record at byte ${datamine.brokenAt.toLocaleString()} could not be read; the entries stop there.`);
+      this.notes.push({ text: { key: "note_record_broken", params: { at: datamine.brokenAt.toLocaleString() } } });
     } else if (datamine.partialAt !== undefined) {
-      this.notes.push(`The file ends in the middle of a record at byte ${datamine.partialAt.toLocaleString()}.`);
+      this.notes.push({ text: { key: "note_record_partial", params: { at: datamine.partialAt.toLocaleString() } } });
     }
     this.settle();
   }
@@ -332,7 +338,7 @@ export class LogEngine {
   // A zip upload is inflated whole and kept as entries; uploads are small.
   private async loadUpload(generation: number) {
     this.kind = "upload";
-    this.formatName = FORMAT_NAMES.datamine_upload;
+    this.formatName = formatText("datamine_upload");
     const bytes = await this.host.read(this.path, 0, this.size);
     if (generation !== this.generation) {
       return;
@@ -352,7 +358,7 @@ export class LogEngine {
     this.headerRows = headerRows(header);
     this.index.sessionId = header.sessionid || undefined;
     if (file.truncated_at !== undefined) {
-      this.notes.push(`The file ends in the middle of a record at byte ${file.truncated_at.toLocaleString()}.`);
+      this.notes.push({ text: { key: "note_record_partial", params: { at: file.truncated_at.toLocaleString() } } });
     }
     this.store = new MemoryStore(entries);
     this.settle();
@@ -508,7 +514,7 @@ export class LogEngine {
       const spooled = this.sidecar?.spool?.format;
       const named = format ?? (TEXT_FORMATS.includes(spooled ?? "") ? spooled : undefined);
       const text = (named ?? log_detect_format(baseName(path), head)) as t_log_text_format;
-      this.formatName = FORMAT_NAMES[text] ?? "Plain text";
+      this.formatName = formatText(TEXT_FORMATS.includes(text) ? text : "plain_text");
       await this.loadText(generation, text);
     } finally {
       if (generation === this.generation) {

@@ -1,5 +1,6 @@
 // The File menu's recent list. Paths and URLs live in localStorage; what a browser picked cannot be
 // written down, so its handle is kept by the backend under `recentKey` and only the name is here.
+import { translate } from "../localization";
 import { baseName, pathKey } from "./format";
 import { storedGet, storedSet } from "./stored";
 
@@ -32,7 +33,7 @@ export function recentLabel(item: RecentItem): string {
 }
 
 export function recentTitle(item: RecentItem): string {
-  const where = item.handle ? `${item.target} (picked in this browser)` : item.target;
+  const where = item.handle ? translate("recent_picked", { target: item.target }) : item.target;
   return item.nickname ? `${item.nickname}: ${where}` : where;
 }
 

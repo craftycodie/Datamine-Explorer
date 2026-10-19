@@ -402,12 +402,59 @@ button.toolbar-brand:focus-visible {
   max-width: 420px;
 }
 
-.recent-list button {
+.recent-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.recent-open {
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 6px;
   align-items: center;
   justify-content: flex-start;
   text-align: left;
+}
+
+.recent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a cross that takes an item off a list; it shows on the row the pointer is over */
+.item-remove {
+  flex: none;
+  width: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  visibility: hidden;
+  background: transparent;
+  border-color: transparent;
+  color: var(--dim);
+}
+
+.recent-row:hover .item-remove,
+.menu-item:hover .item-remove,
+.menu-item.active .item-remove,
+.item-remove:focus-visible {
+  visibility: visible;
+}
+
+.item-remove:hover:not(:disabled) {
+  color: var(--exclude);
+  background: transparent;
+}
+
+.menu-item .item-remove {
+  height: 22px;
+  margin: -3px -8px -3px auto;
+}
+
+.menu-hint + .item-remove {
+  margin-left: 4px;
 }
 
 .hint {
@@ -2127,9 +2174,10 @@ span.source-remove {
 /* the cross only shows on the row the pointer is over */
 .source-item-remove {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 22px;
   padding: 0;
+  font-size: 18px;
   line-height: 1;
   visibility: hidden;
   background: transparent;

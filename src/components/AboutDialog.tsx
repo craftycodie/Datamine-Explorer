@@ -5,15 +5,17 @@ import { DESKTOP_BUILD } from "../lib/desktop";
 import { openExternal } from "../lib/external";
 import { manualCheckMessage, type UpdateOutcome } from "../lib/update-check";
 import { DATAMINE_VERSION, ISSUES_URL, REPOSITORY_URL } from "../lib/versions";
+import { useT } from "../localization";
 
-function builtText(builtAt: string): string {
+function builtText(builtAt: string): string | undefined {
   const date = new Date(builtAt);
-  return Number.isNaN(date.getTime()) ? "unknown" : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? undefined : date.toLocaleString();
 }
 
 // What this build is, and where to find the project.
 // `onCheckUpdates` is only given in the desktop app; the web build is always current.
 export function AboutDialog({ onCheckUpdates, onClose }: { onCheckUpdates?: () => Promise<UpdateOutcome>; onClose: () => void }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<{ checking: boolean; text: string }>();
   const close = useRef<HTMLButtonElement>(null);
@@ -38,7 +40,7 @@ export function AboutDialog({ onCheckUpdates, onClose }: { onCheckUpdates?: () =
     if (!onCheckUpdates) {
       return;
     }
-    setUpdateStatus({ checking: true, text: "Checking for updates..." });
+    setUpdateStatus({ checking: true, text: t("about_checking") });
     const outcome = await onCheckUpdates();
     setUpdateStatus({ checking: false, text: manualCheckMessage(outcome) });
   };
@@ -52,7 +54,7 @@ export function AboutDialog({ onCheckUpdates, onClose }: { onCheckUpdates?: () =
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
-        aria-label="About Datamine Explorer"
+        aria-label={t("about_title")}
         aria-modal="true"
         className="dialog about"
         onKeyDown={(e) => {
@@ -67,38 +69,38 @@ export function AboutDialog({ onCheckUpdates, onClose }: { onCheckUpdates?: () =
           <img alt="" className="about-icon" draggable={false} height="64" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="64" />
           <div>
             <div className="about-name">Datamine Explorer</div>
-            <button className="about-build" onClick={copy} title="Copy the build string" type="button">
+            <button className="about-build" onClick={copy} title={t("about_copy_build")} type="button">
               {BUILD_INFO.buildString}
-              <span className="about-copied">{copied ? "copied" : ""}</span>
+              <span className="about-copied">{copied ? t("about_copied") : ""}</span>
             </button>
           </div>
         </div>
         <dl className="about-fields">
-          <dt>Branch</dt>
+          <dt>{t("about_branch")}</dt>
           <dd>{BUILD_INFO.branch}</dd>
-          <dt>Commit</dt>
-          <dd>{BUILD_INFO.commit ? BUILD_INFO.commit.slice(0, 7) : "unknown"}</dd>
-          <dt>Built</dt>
-          <dd>{BUILD_INFO.builtAt ? builtText(BUILD_INFO.builtAt) : "unknown"}</dd>
+          <dt>{t("about_commit")}</dt>
+          <dd>{BUILD_INFO.commit ? BUILD_INFO.commit.slice(0, 7) : t("common_unknown")}</dd>
+          <dt>{t("about_built")}</dt>
+          <dd>{(BUILD_INFO.builtAt && builtText(BUILD_INFO.builtAt)) || t("common_unknown")}</dd>
           <dt>@blamnetwork/datamine</dt>
           <dd>{DATAMINE_VERSION}</dd>
         </dl>
         <div className="about-links">
           {link(REPOSITORY_URL, "GitHub")}
-          {link(ISSUES_URL, "Report a bug")}
+          {link(ISSUES_URL, t("about_report_bug"))}
         </div>
         {DESKTOP_BUILD && onCheckUpdates && (
           <div className="about-update">
             <button disabled={updateStatus?.checking} onClick={() => void checkUpdates()} type="button">
-              Check for updates
+              {t("about_check_updates")}
             </button>
             {updateStatus && <span className="dim">{updateStatus.text}</span>}
           </div>
         )}
         <div className="about-foot">
-          <span className="dim">Made by @craftycodie</span>
+          <span className="dim">{t("about_made_by", { author: "@craftycodie" })}</span>
           <button className="primary" onClick={onClose} ref={close} type="button">
-            Close
+            {t("common_close")}
           </button>
         </div>
       </div>

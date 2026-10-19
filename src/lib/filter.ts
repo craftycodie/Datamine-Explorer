@@ -1,4 +1,5 @@
 // Severity and category filters and the search spec; the worker applies them to its columns.
+import type { Text } from "../localization";
 import { LEVEL_NAMES } from "./types";
 
 export const NO_CATEGORY = "(none)";
@@ -49,7 +50,7 @@ export interface Matcher {
 }
 
 // Undefined when there is nothing to search for; `error` set when the regex is bad.
-export function matcherBuild(spec: SearchSpec): { matcher?: Matcher; error?: string } {
+export function matcherBuild(spec: SearchSpec): { matcher?: Matcher; error?: Text } {
   if (spec.text === "") {
     return {};
   }
@@ -57,7 +58,7 @@ export function matcherBuild(spec: SearchSpec): { matcher?: Matcher; error?: str
     const highlight = new RegExp(searchSource(spec), spec.caseSensitive ? "g" : "gi");
     // an empty-matching regex would match everywhere and highlight nothing
     if (highlight.test("")) {
-      return { error: "matches the empty string" };
+      return { error: { key: "search_empty_match" } };
     }
     return { matcher: { highlight } };
   } catch (error) {

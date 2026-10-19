@@ -3,6 +3,7 @@
 // with <input webkitdirectory> / <input type=file> (a snapshot of File objects), and a path given to
 // the dev server (scripts/dev-service.mjs), which `?folder=` and the toolbar's path box use.
 // A "root" is what listTree or fileInfo take: a path, or the name of something picked in a browser.
+import { translate } from "../localization";
 import type { HostCall } from "../worker/protocol";
 import { baseName, pathKey } from "./format";
 import { isOpfsPath, liveDirectory, opfsName } from "./opfs";
@@ -112,17 +113,17 @@ function tauriBackend(): Backend {
       const picked = await open({
         directory: false,
         filters: [
-          { extensions: ["txt", "log", "datamine", "zip", "bin", "dat"], name: "Logs and datamine files" },
-          { extensions: ["*"], name: "All files" },
+          { extensions: ["txt", "log", "datamine", "zip", "bin", "dat"], name: translate("dialog_filter_logs") },
+          { extensions: ["*"], name: translate("dialog_filter_all") },
         ],
         multiple: false,
-        title: "Open a log or datamine file",
+        title: translate("dialog_open_file"),
       });
       return typeof picked === "string" ? picked : undefined;
     },
     async pickFolder() {
       const { open } = await import("@tauri-apps/plugin-dialog");
-      const picked = await open({ directory: true, multiple: false, title: "Open a log folder" });
+      const picked = await open({ directory: true, multiple: false, title: translate("dialog_open_folder") });
       return typeof picked === "string" ? picked : undefined;
     },
     async readRange(path, offset, length) {
@@ -154,10 +155,10 @@ function tauriBackend(): Backend {
       const dest = await save({
         defaultPath: savedName(baseName(path)),
         filters: [
-          { extensions: ["txt", "log"], name: "Event logs" },
-          { extensions: ["*"], name: "All files" },
+          { extensions: ["txt", "log"], name: translate("dialog_filter_event_logs") },
+          { extensions: ["*"], name: translate("dialog_filter_all") },
         ],
-        title: "Save session as",
+        title: translate("dialog_save_session"),
       });
       if (!dest) {
         return;
@@ -192,7 +193,7 @@ const DEV_SERVICE = import.meta.env.DEV;
 
 async function api<T>(route: string, query: Record<string, string | number>): Promise<T> {
   if (!DEV_SERVICE) {
-    throw new Error("opening a path needs the dev server; pick a folder or file instead");
+    throw new Error(translate("backend_dev_only"));
   }
   const url = `/api/${route}?${new URLSearchParams(Object.entries(query).map(([k, v]) => [k, String(v)]))}`;
   const response = await fetch(url);
@@ -484,7 +485,7 @@ function browserBackend(): Backend {
       const handle = fileHandles.get(path);
       const file = handle ? await handle.getFile() : (fileSnapshots.get(path) ?? siblings.get(path));
       if (!file) {
-        throw new Error(`${path} is not one of the opened files`);
+        throw new Error(translate("backend_not_opened_files", { path }));
       }
       return file;
     }
@@ -494,23 +495,23 @@ function browserBackend(): Backend {
     }
     if (source.mode === "file-handle" || source.mode === "file-snapshot") {
       if (path !== source.name) {
-        throw new Error(`${path} is not the opened file`);
+        throw new Error(translate("backend_not_opened_file", { path }));
       }
       return source.mode === "file-handle" ? source.handle.getFile() : source.file;
     }
     if (source.mode === "snapshot") {
       const file = source.byPath.get(path);
       if (!file) {
-        throw new Error(`${path} is not in the folder`);
+        throw new Error(translate("backend_not_in_folder", { path }));
       }
       return file;
     }
     if (source.mode !== "handle") {
-      throw new Error("no folder is open");
+      throw new Error(translate("backend_no_folder"));
     }
     const parts = path.split("/");
     if (parts[0] !== source.name) {
-      throw new Error(`${path} is outside the opened folder`);
+      throw new Error(translate("backend_outside_folder", { path }));
     }
     let dir = source.handle;
     for (const part of parts.slice(1, -1)) {
@@ -527,7 +528,7 @@ function browserBackend(): Backend {
     if (source.mode === "file-handle") {
       return [fileNode(source.name, await source.handle.getFile())];
     }
-    throw new Error("no folder is open");
+    throw new Error(translate("backend_no_folder"));
   };
 
   const pollOnce = async (): Promise<number> => {
@@ -666,9 +667,9 @@ function browserBackend(): Backend {
     pathsSupported: DEV_SERVICE,
     note: () => {
       if (source.mode === "snapshot") {
-        return "folder read as a snapshot, it does not update";
+        return translate("backend_snapshot_folder");
       }
-      return source.mode === "file-snapshot" ? "file read as a snapshot, it does not update" : undefined;
+      return source.mode === "file-snapshot" ? translate("backend_snapshot_file") : undefined;
     },
     async onChanged(callback) {
       listeners.add(callback);
@@ -753,7 +754,7 @@ function browserBackend(): Backend {
       }
       let handle: FileSystemFileHandle;
       try {
-        handle = await picker.call(window, { suggestedName: suggested, types: [{ accept: { "text/plain": [".txt", ".log"] }, description: "Event logs" }] });
+        handle = await picker.call(window, { suggestedName: suggested, types: [{ accept: { "text/plain": [".txt", ".log"] }, description: translate("dialog_filter_event_logs") }] });
       } catch {
         // dismissed
         return;

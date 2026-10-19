@@ -1,5 +1,6 @@
 // Looks for a newer build among the repository's GitHub releases. Ported from MegaCrow's update check.
 import { BUILD_TAG_RE, isNewerBuild, isReleaseBranchBuild, parseBuildSeq } from "../build-info";
+import { translate } from "../localization";
 import { storedGet, storedSet } from "./stored";
 
 const RELEASES_URL = "https://api.github.com/repos/craftycodie/Datamine-Explorer/releases?per_page=100";
@@ -47,11 +48,11 @@ export function releaseFromResponse(data: ReleaseResponse): ReleaseInfo | null {
 export async function fetchReleases(fetchImpl: typeof fetch = fetch): Promise<ReleaseInfo[]> {
   const response = await fetchImpl(RELEASES_URL, { headers: { Accept: "application/vnd.github+json" } });
   if (!response.ok) {
-    throw new Error(`GitHub answered ${response.status}`);
+    throw new Error(translate("update_error_status", { status: response.status }));
   }
   const data: unknown = await response.json();
   if (!Array.isArray(data)) {
-    throw new Error("GitHub gave an unexpected answer");
+    throw new Error(translate("update_error_answer"));
   }
   return data.flatMap((item) => releaseFromResponse(item as ReleaseResponse) ?? []);
 }
@@ -116,12 +117,12 @@ export function skippedUpdateSet(tag: string) {
 export function manualCheckMessage(outcome: UpdateOutcome): string {
   switch (outcome.kind) {
     case "available":
-      return `${outcome.release.tagName} is available`;
+      return translate("update_check_available", { version: outcome.release.tagName });
     case "current":
-      return "You're up to date";
+      return translate("update_check_current");
     case "untracked":
-      return "This is an untracked build, so there is nothing to compare";
+      return translate("update_check_untracked");
     case "error":
-      return `Could not check for updates: ${outcome.message}`;
+      return translate("update_check_error", { error: outcome.message });
   }
 }

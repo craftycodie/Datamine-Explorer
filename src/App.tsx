@@ -13,6 +13,7 @@ import { MENU_OPEN_EVENT } from "./components/Menu";
 import { PreReleaseWatermark } from "./components/PreReleaseWatermark";
 import { SessionPane } from "./components/SessionPane";
 import { type SourceDraft, SourcesDialog } from "./components/SourcesDialog";
+import { RecentList } from "./components/RecentList";
 import { SourcesPane } from "./components/SourcesPane";
 import { Sized } from "./components/Sized";
 import { Toolbar } from "./components/Toolbar";
@@ -25,10 +26,11 @@ import { clipboardWrite } from "./lib/clipboard";
 import { useColumns } from "./lib/columns";
 import { filtersActive, filtersDefault, matcherBuild, type Filters, type SearchSpec } from "./lib/filter";
 import { baseName, pathKey, sizeText } from "./lib/format";
-import { recentKey, recentLabel, recentLoad, recentPush, recentRemove, recentStore, recentTitle, type RecentItem, type RecentKind } from "./lib/recent";
+import { recentKey, recentLabel, recentLoad, recentPush, recentRemove, recentStore, type RecentItem, type RecentKind } from "./lib/recent";
 import { useRows } from "./lib/rows";
 import { SELECTION_EMPTY, selectionAll, selectionClick, selectionCollapse, selectionSingle, type SelectModifiers } from "./lib/selection";
 import { useLogSession, type LogSource, type ViewState } from "./lib/session";
+import { textOf, translate, translateCount, useT } from "./localization";
 import { storedGet, storedSet } from "./lib/stored";
 import { DESKTOP_BUILD } from "./lib/desktop";
 import { useUpdateCheck } from "./lib/update-hook";
@@ -83,6 +85,7 @@ function usePersisted<T>(key: string, initial: T, parse: (text: string) => T | u
 }
 
 export function App() {
+  const t = useT();
   // the folder or file that is open, and whether it is a file on its own
   const [folder, setFolder] = useState<string>();
   const [single, setSingle] = useState(false);
@@ -221,13 +224,23 @@ export function App() {
     [recentForget, recentsSet]
   );
 
-  const recentDrop = useCallback(
-    (item: RecentItem, why?: string) => {
+  // Takes something off the recent list, when asked to.
+  const recentRemoveOne = useCallback(
+    (item: RecentItem) => {
       recentForget([item]);
       recentsSet(recentRemove(recentsRef.current, item));
-      setNotice(`Could not open ${recentLabel(item)}${why ? `: ${why}` : ""}. Removed from recent.`);
     },
     [recentForget, recentsSet]
+  );
+
+  // ...or because it could not be opened.
+  const recentDrop = useCallback(
+    (item: RecentItem, why?: string) => {
+      recentRemoveOne(item);
+      const name = recentLabel(item);
+      setNotice(why ? translate("notice_recent_dropped_why", { name, why }) : translate("notice_recent_dropped", { name }));
+    },
+    [recentRemoveOne]
   );
 
   // --- opening things; each gives back what went wrong, or nothing
@@ -355,7 +368,7 @@ export function App() {
       if (item.handle) {
         const restored = await backend.handleRestore(recentKey(item));
         if (!restored) {
-          recentDrop(item, "the browser did not give access");
+          recentDrop(item, translate("notice_no_access"));
           return;
         }
         root = restored.root;
@@ -389,9 +402,9 @@ export function App() {
       handledNonce.current = live.nonce;
       const known = recentsRef.current.find((item) => item.kind === "server" && item.target === live.url);
       if (known) {
-        recentDrop(known, liveStatus.error);
+        recentDrop(known, textOf(liveStatus.error));
       } else {
-        setNotice(`Could not connect to ${live.url}: ${liveStatus.error}`);
+        setNotice(translate("notice_connect_failed", { error: textOf(liveStatus.error), url: live.url }));
       }
     }
   }, [live, liveStatus, recentAdd, recentDrop]);
@@ -410,16 +423,16 @@ export function App() {
         return;
       }
       if (!saved.root) {
-        setNotice(`Downloaded ${saved.name}.`);
+        setNotice(translate("notice_downloaded", { name: saved.name }));
       } else if (status.state === "closed") {
         await fileOpen(saved.root);
-        setNotice(`Saved to ${saved.name}.`);
+        setNotice(translate("notice_saved", { name: saved.name }));
       } else {
         void recentAdd("file", saved.root);
-        setNotice(`Saved what has arrived so far to ${saved.name}. The session is still live; later entries are not in it.`);
+        setNotice(translate("notice_saved_partial", { name: saved.name }));
       }
     } catch (error) {
-      setNotice(`Could not save the session: ${error instanceof Error ? error.message : String(error)}`);
+      setNotice(translate("notice_save_failed", { error: error instanceof Error ? error.message : String(error) }));
     }
   }, [fileOpen, liveStatus, recentAdd]);
 
@@ -457,7 +470,7 @@ export function App() {
       const added: MultiSource[] = drafts.map((draft) => ({ key: `s${++sourceKey.current}`, kind: draft.kind, name: draft.name, root: draft.root, target: draft.root }));
       const why = await multiSet(mode === "add" && multi ? [...multi.sources, ...added] : added);
       if (why) {
-        setNotice(`Could not open the sources: ${why}`);
+        setNotice(translate("notice_sources_failed", { error: why }));
         return;
       }
       if (mode === "open") {
@@ -475,7 +488,7 @@ export function App() {
   const sourceRemove = useCallback(
     (key: string) => {
       if (multi) {
-        void multiSet(multi.sources.filter((one) => one.key !== key)).then((why) => why && setNotice(`Could not open the sources: ${why}`));
+        void multiSet(multi.sources.filter((one) => one.key !== key)).then((why) => why && setNotice(translate("notice_sources_failed", { error: why })));
       }
     },
     [multi, multiSet]
@@ -507,7 +520,7 @@ export function App() {
       const fromFolder = query.get("folder");
       const fromFile = query.get("file");
       if ((fromFolder || fromFile) && !backend.pathsSupported) {
-        setNotice("A path in the address cannot be opened here. Use the File menu to pick a folder or file.");
+        setNotice(translate("notice_path_unsupported"));
       } else if (fromFolder) {
         await folderOpen(fromFolder);
         if (fromFile) {
@@ -715,22 +728,22 @@ export function App() {
         return;
       }
       if (ranges.length === 0) {
-        setCopied("Nothing selected");
+        setCopied(translate("copied_nothing_selected"));
         return;
       }
       copying.current = true;
       try {
         const result = await client.call({ limit: COPY_LIMIT_BYTES, mode, name: "selectionRaw", ranges });
         if (result.text === undefined) {
-          setNotice(`The selection is ${sizeText(result.bytes)} of text; copying is limited to ${COPY_LIMIT_BYTES / 1024 / 1024} MB. Select less and try again.`);
+          setNotice(translate("notice_copy_too_big", { limit: COPY_LIMIT_BYTES / 1024 / 1024, size: sizeText(result.bytes) }));
         } else if (result.rows === 0) {
-          setCopied("Nothing to copy: the selected rows are hidden by the filters");
+          setCopied(translate("copied_hidden"));
         } else {
           await clipboardWrite(result.text);
-          setCopied(`Copied ${result.rows.toLocaleString()} ${result.rows === 1 ? "line" : "lines"}`);
+          setCopied(translateCount("copied_lines", result.rows));
         }
       } catch (error) {
-        setNotice(`Could not copy: ${error instanceof Error ? error.message : String(error)}`);
+        setNotice(translate("notice_copy_failed", { error: error instanceof Error ? error.message : String(error) }));
       } finally {
         copying.current = false;
       }
@@ -829,7 +842,7 @@ export function App() {
   }, [jumpToTail, matchStep, openFileDialog, openFolderDialog, setLeftHidden, setRightHidden]);
 
   const toolbarLabel = multi
-    ? { kind: "sources" as const, name: multi.sources.map((one) => one.name).join(", "), title: `${multi.sources.length} sources` }
+    ? { kind: "sources" as const, name: multi.sources.map((one) => one.name).join(", "), title: translateCount("format_sources", multi.sources.length) }
     : live
     ? { kind: "server" as const, name: serverName(liveStatus?.prefix ?? live.url), title: liveStatus?.prefix ?? live.url }
     : folder
@@ -902,19 +915,19 @@ export function App() {
     if (viewCount > 0) {
       center = table;
     } else if (file?.loading) {
-      center = <div className="placeholder">Reading {multi.sources.length} sources...</div>;
+      center = <div className="placeholder">{translateCount("placeholder_reading_sources", multi.sources.length)}</div>;
     } else {
-      center = <div className="placeholder">{filtered ? "No rows pass the filters." : "No entries in these sources yet."}</div>;
+      center = <div className="placeholder">{t(filtered ? "placeholder_no_rows" : "placeholder_sources_empty")}</div>;
     }
   } else if (live) {
     if (viewCount > 0) {
       center = table;
     } else if (liveStatus?.state === "closed" && liveStatus.error) {
-      center = <div className="placeholder error">{liveStatus.error}</div>;
+      center = <div className="placeholder error">{textOf(liveStatus.error)}</div>;
     } else if (!liveStatus || liveStatus.state === "connecting") {
-      center = <div className="placeholder">Connecting to {live.url}...</div>;
+      center = <div className="placeholder">{t("placeholder_connecting", { url: live.url })}</div>;
     } else {
-      center = <div className="placeholder">{filtered ? "No rows pass the filters." : "Connected, waiting for entries."}</div>;
+      center = <div className="placeholder">{t(filtered ? "placeholder_no_rows" : "placeholder_waiting")}</div>;
     }
   } else if (!folder) {
     center = (
@@ -922,48 +935,33 @@ export function App() {
         <img alt="" className="splash-icon" draggable={false} height="72" src={`${import.meta.env.BASE_URL}app-icon.svg`} width="72" />
         <div className="splash-title">Datamine Explorer</div>
         {backend.kind !== "tauri" && embeddedView() && (
-          <div className="splash-warning">
-            This embedded browser view can't read files from your disk, so opening a file or folder may fail. Open
-            this page in Chrome or Edge, or use the desktop app. Connecting to a server works here.
-          </div>
+          <div className="splash-warning">{t("splash_embedded")}</div>
         )}
-        <div>{folderError ?? "Open a file, folder or server"}</div>
+        <div>{folderError ?? t("splash_prompt")}</div>
         <div className="placeholder-buttons">
           <button className="primary" onClick={() => void openFolderDialog()} type="button">
-            <KindIcon kind="folder" /> Open Folder...
+            <KindIcon kind="folder" /> {t("file_open_folder")}
           </button>
           <button onClick={() => void openFileDialog()} type="button">
-            <KindIcon kind="file" /> Open File...
+            <KindIcon kind="file" /> {t("file_open_file")}
           </button>
           <button onClick={() => setConnectOpen(true)} type="button">
-            <KindIcon kind="server" /> Connect...
+            <KindIcon kind="server" /> {t("file_connect")}
           </button>
         </div>
-        {recents.length > 0 && (
-          <div className="recent-list">
-            <div className="dim">Recent</div>
-            {recents.map((item) => (
-              <button key={`${item.kind}-${item.target}`} onClick={() => void recentOpen(item)} title={recentTitle(item)} type="button">
-                <KindIcon kind={item.kind} />
-                {recentLabel(item)}
-              </button>
-            ))}
-          </div>
-        )}
+        <RecentList items={recents} onOpen={(item) => void recentOpen(item)} onRemove={recentRemoveOne} />
       </div>
     );
   } else if (!file) {
-    center = <div className="placeholder">Pick a file from the tree.</div>;
+    center = <div className="placeholder">{t("placeholder_pick")}</div>;
   } else if (file.error && viewCount === 0) {
     center = <div className="placeholder error">{file.error}</div>;
   } else if (file.loading && viewCount === 0) {
     center = (
-      <div className="placeholder">
-        Indexing {baseName(file.path)}... {indexedPercent}%
-      </div>
+      <div className="placeholder">{t("placeholder_indexing", { name: baseName(file.path), percent: indexedPercent })}</div>
     );
   } else if (viewCount === 0) {
-    center = <div className="placeholder">{filtered ? "No rows pass the filters." : `No entries in ${baseName(file.path)}.`}</div>;
+    center = <div className="placeholder">{filtered ? t("placeholder_no_rows") : t("placeholder_no_entries", { name: baseName(file.path) })}</div>;
   } else {
     center = table;
   }
@@ -990,6 +988,7 @@ export function App() {
               onOpenFolder={() => void openFolderDialog()}
               onOpenMultiple={() => setSourcesDialog("open")}
               onRecent={(item) => void recentOpen(item)}
+              onRecentRemove={recentRemoveOne}
               onReload={() => void reloadAll()}
               onSaveSession={() => void sessionSave()}
               recents={recents}
@@ -1044,11 +1043,11 @@ export function App() {
             <div className="tabbar">
               <button className={rightTab === "detail" ? "tab active" : "tab"} onClick={() => setRightTab("detail")} type="button">
                 <DetailIcon />
-                Detail
+                {t("tab_detail")}
               </button>
               <button className={rightTab === "session" ? "tab active" : "tab"} onClick={() => setRightTab("session")} type="button">
                 <SessionIcon />
-                Session
+                {t("tab_session")}
               </button>
             </div>
             <div className="right-body">
@@ -1068,23 +1067,26 @@ export function App() {
         </Sized>
       </div>
       <div className={`statusbar${file?.error || notice ? " failed" : ""}`}>
-        <span>{multi ? `${multi.sources.length} sources` : live ? (liveStatus?.prefix ?? live.url) : file ? baseName(file.path) : (folder ?? "no folder")}</span>
+        <span>
+          {multi ? translateCount("format_sources", multi.sources.length) : live ? (liveStatus?.prefix ?? live.url) : file ? baseName(file.path) : (folder ?? t("status_no_folder"))}
+        </span>
         {live && <LiveBadge live={liveStatus} />}
         {file && (
           <span>
-            {filtered ? `${viewCount.toLocaleString()} rows of ` : ""}
-            {data.stats.count.toLocaleString()} entries
+            {filtered
+              ? t("status_rows_of", { entries: translateCount("status_entries", data.stats.count), rows: viewCount.toLocaleString() })
+              : translateCount("status_entries", data.stats.count)}
           </span>
         )}
-        {file?.loading && !live && <span>indexing {indexedPercent}%</span>}
+        {file?.loading && !live && <span>{t("status_indexing", { percent: indexedPercent })}</span>}
         {file?.error && <span>{file.error}</span>}
         {notice && <span>{notice}</span>}
         {copied && <span className="copied">{copied}</span>}
         {folderError && folder && <span>{folderError}</span>}
         {backend.note() && <span>{backend.note()}</span>}
         <span className="toolbar-spacer" />
-        <span>{backend.kind === "tauri" ? "desktop" : "browser"}</span>
-        <button className="statusbar-build" onClick={() => setAboutOpen(true)} title="About Datamine Explorer" type="button">
+        <span>{t(backend.kind === "tauri" ? "status_desktop" : "status_browser")}</span>
+        <button className="statusbar-build" onClick={() => setAboutOpen(true)} title={t("about_title")} type="button">
           Datamine Explorer {BUILD_INFO.buildString}
         </button>
       </div>
@@ -1112,6 +1114,7 @@ export function App() {
           onCancel={() => setSourcesDialog(undefined)}
           onPickFile={() => backend.pickFile({ keep: true })}
           onRecent={async (item) => (item.handle ? (await backend.handleRestore(recentKey(item), { keep: true }))?.root : item.target)}
+          onRecentRemove={recentRemoveOne}
           onSubmit={(drafts) => void sourcesSubmit(sourcesDialog, drafts)}
           recents={recents}
           serverDefault={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}
