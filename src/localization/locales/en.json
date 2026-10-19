@@ -303,5 +303,10 @@
   "dialog_filter_event_logs": "Event logs",
   "dialog_save_session": "Save session as",
   "tab_detail": "Detail",
-  "tab_session": "Session"
+  "tab_session": "Session",
+  "view_columns": "Columns",
+  "view_column_source": "Source",
+  "view_column_time": "Time",
+  "view_column_index": "Index",
+  "view_column_source_hint": "Only with several sources open"
 }

@@ -132,7 +132,7 @@ export function LogTable({
   const t = useT();
   const scroller = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const columnIds = showSource ? SOURCE_COLUMN_IDS : COLUMN_IDS;
+  const columnIds = (showSource ? SOURCE_COLUMN_IDS : COLUMN_IDS).filter((id) => columns.shown(id));
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
   // the widest message seen since the file was opened, which only grows
@@ -591,13 +591,13 @@ export function LogTable({
     const message = wrap ? (entry.message.length > TEXT_LIMIT ? `${entry.message.slice(0, TEXT_LIMIT)}...` : entry.message) : messageLine(entry);
     items.push(
       <div className={classes.join(" ")} data-row={row} key={row} {...rowEvents(row, entry)} ref={rowRef} style={style}>
-        {showSource && (
+        {showSource && columns.shown("source") && (
           <span className="cell-source" title={entry.source}>
             {entry.source}
           </span>
         )}
-        <span className="cell-time">{timeColumnText(entry.timeText)}</span>
-        <span className="cell-index">{entry.eventIndex ?? entry.ordinal}</span>
+        {columns.shown("time") && <span className="cell-time">{timeColumnText(entry.timeText)}</span>}
+        {columns.shown("index") && <span className="cell-index">{entry.eventIndex ?? entry.ordinal}</span>}
         <span>
           <span className={`badge level-${entry.level}`} title={entry.level >= 0 ? t(`level_${LEVEL_NAMES[entry.level]}`) : entry.levelText}>
             {LEVEL_SHORT[entry.level] ?? (entry.levelText || "?").slice(0, 4).toUpperCase()}
@@ -639,7 +639,7 @@ export function LogTable({
 
   return (
     <div
-      className={`logtable${wrap ? " wrap" : ""}${showSource ? " with-source" : ""}`}
+      className={wrap ? "logtable wrap" : "logtable"}
       onDragStart={(e) => e.preventDefault()}
       onKeyDown={onKeyDown}
       onMouseDown={() => window.getSelection()?.removeAllRanges()}

@@ -9,6 +9,7 @@ describe("recent nicknames", () => {
     expect(again).toEqual([{ kind: "file", nickname: "game", target: "C:/logs/debug.txt" }]);
     const renamed = recentPush(again, { kind: "file", nickname: "client", target: "C:/logs/debug.txt" }).items;
     expect(renamed[0].nickname).toBe("client");
-    expect(recentTitle(renamed[0])).toBe("client: C:/logs/debug.txt");
+    expect(recentTitle(renamed[0], true)).toBe("client: C:/logs/debug.txt");
+    expect(recentTitle(renamed[0])).toBe("C:/logs/debug.txt");
   });
 });

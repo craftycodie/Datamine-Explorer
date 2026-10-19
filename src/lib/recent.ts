@@ -32,9 +32,10 @@ export function recentLabel(item: RecentItem): string {
   return item.kind === "server" ? item.target.replace(/^https?:\/\//, "") : baseName(item.target);
 }
 
-export function recentTitle(item: RecentItem): string {
+// The nickname is only shown where several sources are picked.
+export function recentTitle(item: RecentItem, nickname = false): string {
   const where = item.handle ? translate("recent_picked", { target: item.target }) : item.target;
-  return item.nickname ? `${item.nickname}: ${where}` : where;
+  return nickname && item.nickname ? `${item.nickname}: ${where}` : where;
 }
 
 function valid(value: unknown): value is RecentItem {

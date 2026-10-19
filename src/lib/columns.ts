@@ -8,6 +8,9 @@ export const COLUMN_IDS = ["time", "index", "level", "category"] as const;
 // with several sources open, the source's nickname comes first
 export const SOURCE_COLUMN_IDS = ["source", ...COLUMN_IDS] as const;
 export type ColumnId = (typeof SOURCE_COLUMN_IDS)[number];
+// the columns the View menu can hide; the level, category and message always show
+export const OPTIONAL_COLUMN_IDS = ["source", "time", "index"] as const satisfies readonly ColumnId[];
+export type OptionalColumnId = (typeof OPTIONAL_COLUMN_IDS)[number];
 export type ColumnWidths = Record<ColumnId, number>;
 
 // What each column needs to show its content and its header label: a whole timestamp, five digits,
@@ -21,6 +24,7 @@ export const GRID_PADDING = 16;
 
 // "dmv." is from the app's old name, Datamine Viewer; kept so saved widths survive the rename.
 export const COLUMNS_KEY = "dmv.columns";
+export const COLUMNS_HIDDEN_KEY = "dmv.columnsHidden";
 
 export const COLUMN_DEFAULTS: ColumnWidths = { category: 160, index: 64, level: 52, source: 90, time: 96 };
 
@@ -59,6 +63,7 @@ export function columnVariables(widths: ColumnWidths, ids: readonly ColumnId[] =
     "--col-message-min": `${MESSAGE_MINIMUM}px`,
     // where the message column starts, for the scrollbar under it
     "--msg-left": `${GRID_PADDING / 2 + fixed + ids.length * COLUMN_GAP}px`,
+    "--grid-columns": [...ids.map((id) => `var(--col-${id})`), "minmax(var(--col-message-min), 1fr)"].join(" "),
   };
   for (const id of ids) {
     variables[`--col-${id}`] = `${widths[id]}px`;
@@ -70,6 +75,18 @@ export interface Columns {
   widths: ColumnWidths;
   set(id: ColumnId, width: number): void;
   reset(): void;
+  shown(id: ColumnId): boolean;
+  toggle(id: OptionalColumnId): void;
+}
+
+// The hidden columns from storage; anything odd in it is left out.
+export function hiddenParse(text: string | null): OptionalColumnId[] {
+  try {
+    const stored: unknown = JSON.parse(text ?? "[]");
+    return Array.isArray(stored) ? OPTIONAL_COLUMN_IDS.filter((id) => stored.includes(id)) : [];
+  } catch {
+    return [];
+  }
 }
 
 export function useColumns(): Columns {
@@ -85,5 +102,14 @@ export function useColumns(): Columns {
     setWidths({ ...COLUMN_DEFAULTS });
     storedSet(COLUMNS_KEY, JSON.stringify(COLUMN_DEFAULTS));
   }, []);
-  return { reset, set, widths };
+  const [hidden, setHidden] = useState<OptionalColumnId[]>(() => hiddenParse(storedGet(COLUMNS_HIDDEN_KEY)));
+  const shown = useCallback((id: ColumnId) => !(hidden as ColumnId[]).includes(id), [hidden]);
+  const toggle = useCallback((id: OptionalColumnId) => {
+    setHidden((old) => {
+      const next = old.includes(id) ? old.filter((other) => other !== id) : [...old, id];
+      storedSet(COLUMNS_HIDDEN_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  return { reset, set, shown, toggle, widths };
 }

@@ -994,6 +994,7 @@ export function App() {
               recents={recents}
             />
             <ViewMenu
+              columns={columns}
               leftShown={!leftHidden}
               onLeftToggle={() => setLeftHidden(!leftHidden)}
               onResetColumns={columns.reset}
@@ -1001,6 +1002,7 @@ export function App() {
               onTheme={setTheme}
               onWrapToggle={() => setWrap(!wrap)}
               rightShown={!rightHidden}
+              sourceColumn={multi !== undefined}
               theme={theme}
               wrap={wrap}
             />

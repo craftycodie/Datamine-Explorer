@@ -403,13 +403,23 @@ button.toolbar-brand:focus-visible {
 }
 
 .recent-row {
+  position: relative;
   display: flex;
   align-items: stretch;
+}
+
+/* the cross sits over the right end of the button, so the list stays centred and the rows line up */
+.recent-row .item-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .recent-open {
   flex: 1;
   min-width: 0;
+  padding-right: 28px;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -1203,7 +1213,8 @@ button.toggle.on {
 
 .log-grid {
   display: grid;
-  grid-template-columns: var(--col-time) var(--col-index) var(--col-level) var(--col-category) minmax(var(--col-message-min), 1fr);
+  /* the columns shown, from columnVariables in columns.ts */
+  grid-template-columns: var(--grid-columns);
   column-gap: 8px;
   align-items: center;
   padding: 0 8px;
@@ -1300,11 +1311,6 @@ button.toggle.on {
 .logtable.wrap .cell-time,
 .logtable.wrap .cell-index {
   line-height: 16px;
-}
-
-/* several sources: their nicknames come first */
-.logtable.with-source .log-grid {
-  grid-template-columns: var(--col-source) var(--col-time) var(--col-index) var(--col-level) var(--col-category) minmax(var(--col-message-min), 1fr);
 }
 
 .cell-source {

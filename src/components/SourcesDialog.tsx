@@ -238,7 +238,7 @@ export function SourcesDialog({
             </button>
           </div>
         )}
-        <RecentList className="sources-recent" items={usable} onOpen={(item) => void recentUse(item)} onRemove={onRecentRemove} />
+        <RecentList className="sources-recent" items={usable} nicknames onOpen={(item) => void recentUse(item)} onRemove={onRecentRemove} />
         {error && <div className="dialog-error">{error}</div>}
         <div className="dialog-buttons">
           <button className="primary" onClick={submit} type="button">

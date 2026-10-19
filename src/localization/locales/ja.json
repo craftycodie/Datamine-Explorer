@@ -303,5 +303,10 @@
   "dialog_filter_event_logs": "イベントログ",
   "dialog_save_session": "セッションに名前を付けて保存",
   "tab_detail": "詳細",
-  "tab_session": "セッション"
+  "tab_session": "セッション",
+  "view_columns": "列",
+  "view_column_source": "ソース",
+  "view_column_time": "時刻",
+  "view_column_index": "番号",
+  "view_column_source_hint": "複数のソースを開いているときのみ"
 }
