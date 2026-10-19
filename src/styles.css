@@ -626,10 +626,21 @@ button.toolbar-brand:focus-visible {
   gap: 8px;
 }
 
-.placeholder-buttons {
-  display: flex;
+/* the start screen's open and connect buttons, two to a row, all as wide as the widest, labels on the left */
+.splash-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
-  justify-content: center;
+}
+
+.splash-buttons > *,
+.splash-buttons > span > button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
 }
 
 .live-state {

@@ -984,15 +984,13 @@ export function App() {
           <div className="splash-warning">{t("splash_embedded")}</div>
         )}
         <div>{folderError ?? t("splash_prompt")}</div>
-        <div className="placeholder-buttons">
-          <button className="primary" onClick={() => void openFolderDialog()} type="button">
-            <KindIcon kind="folder" /> {t("file_open_folder")}
-          </button>
-          <button onClick={() => void openFileDialog()} type="button">
+        <div className="splash-buttons">
+          <button className="primary" onClick={() => void openFileDialog()} type="button">
             <KindIcon kind="file" /> {t("file_open_file")}
           </button>
-        </div>
-        <div className="placeholder-buttons">
+          <button onClick={() => void openFolderDialog()} type="button">
+            <KindIcon kind="folder" /> {t("file_open_folder")}
+          </button>
           <button onClick={() => setConnectOpen("server")} type="button">
             <KindIcon kind="server" /> {t("file_connect")}
           </button>
@@ -1125,7 +1123,7 @@ export function App() {
       </div>
       <div className={`statusbar${file?.error || notice ? " failed" : ""}`}>
         <span>
-          {multi ? translateCount("format_sources", multi.sources.length) : live ? (liveStatus?.prefix ?? live.url) : file ? baseName(file.path) : (folder ?? t("status_no_folder"))}
+          {multi ? translateCount("format_sources", multi.sources.length) : live ? (liveStatus?.prefix ?? live.url) : file ? baseName(file.path) : (folder ?? t("status_nothing_open"))}
         </span>
         {live && <LiveBadge live={liveStatus} />}
         {file && (
@@ -1142,7 +1140,6 @@ export function App() {
         {folderError && folder && <span>{folderError}</span>}
         {backend.note() && <span>{backend.note()}</span>}
         <span className="toolbar-spacer" />
-        <span>{t(backend.kind === "tauri" ? "status_desktop" : "status_browser")}</span>
         <button className="statusbar-build" onClick={() => setAboutOpen(true)} title={t("about_title")} type="button">
           Datamine Explorer {BUILD_INFO.buildString}
         </button>
