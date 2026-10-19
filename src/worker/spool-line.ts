@@ -6,7 +6,6 @@ import {
   build_banner,
   e_event_level,
   format_event_for_log,
-  k_event_level_none,
   type s_event_log_line,
   type t_data_mine_header_layout,
 } from "@blamnetwork/datamine/reading";
@@ -21,13 +20,8 @@ export const SPOOL_LAYOUT: t_data_mine_header_layout = "3.1";
 // The package cuts its own log lines at the 2048 byte event buffer; the spool keeps what it was sent.
 const LINE_MAXIMUM_CHARACTERS = 1 << 24;
 
-// A level the writer cannot write is written as a message; an entry of no level (a console's debug
-// output) is written as one.
+// A level the writer cannot write is written as a message.
 export function levelClamp(level: number): e_event_level {
-  if (level === k_event_level_none) {
-    // the line type asks for a level, but the writer names this one "none", which the parser reads back
-    return k_event_level_none as e_event_level;
-  }
   return Number.isInteger(level) && level >= e_event_level.verbose && level <= e_event_level.critical
     ? (level as e_event_level)
     : e_event_level.message;

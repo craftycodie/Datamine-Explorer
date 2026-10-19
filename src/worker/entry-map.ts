@@ -1,6 +1,6 @@
 // Turns the datamine package's entries into the explorer's own shape, and decodes file bytes.
 import { k_datamine_parameter_type_names, type s_log_entry } from "@blamnetwork/datamine/reading";
-import type { LogEntry } from "../lib/types";
+import { LEVEL_UNLEVELED, type LogEntry } from "../lib/types";
 
 export function parameterTypeName(type: number): string {
   return (k_datamine_parameter_type_names as Record<number, string>)[type] ?? String(type);
@@ -22,7 +22,7 @@ export function textDecode(bytes: Uint8Array): string {
 }
 
 export function levelNumber(entry: s_log_entry): number {
-  return entry.level === undefined ? -1 : entry.level;
+  return entry.level ?? LEVEL_UNLEVELED;
 }
 
 export function categoryText(entry: s_log_entry): string {
@@ -90,7 +90,7 @@ export function plainEntry(line: string, ordinal: number, full: boolean): LogEnt
   return {
     truncated: !full && text.length > ROW_MESSAGE_MAXIMUM ? true : undefined,
     category: "",
-    level: -1,
+    level: LEVEL_UNLEVELED,
     levelText: "",
     message: full || text.length <= ROW_MESSAGE_MAXIMUM ? text : text.slice(0, ROW_MESSAGE_MAXIMUM),
     ordinal,

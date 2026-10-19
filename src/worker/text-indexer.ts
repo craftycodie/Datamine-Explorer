@@ -2,6 +2,7 @@
 // columns the filters need. The package's parser decides what is an entry; this tracks which
 // byte each of its lines began at, so an entry can be read again later on its own.
 import { c_log_text_parser, type s_log_entry, type t_log_text_format } from "@blamnetwork/datamine/reading";
+import { LEVEL_UNLEVELED } from "../lib/types";
 import type { EntryIndex, OverlayEntry } from "./entry-index";
 import { categoryText, levelNumber, lineCount, textDecode } from "./entry-map";
 import { CHUNK_BYTES, type ByteSource } from "./source";
@@ -87,7 +88,7 @@ export class TextIndexer {
     if (!this.parser) {
       for (let line = 0; line < lines; line++) {
         const offset = this.starts[first + line];
-        this.index.add(offset, this.starts[first + line + 1] - offset, -1, "", Number.NaN, -1);
+        this.index.add(offset, this.starts[first + line + 1] - offset, LEVEL_UNLEVELED, "", Number.NaN, -1);
       }
       this.starts[0] = this.starts[first + lines];
       this.startsLength = 1;
@@ -155,7 +156,7 @@ export class TextIndexer {
           category: 0,
           event: -1,
           length: lines[line + 1] - lines[line],
-          level: -1,
+          level: LEVEL_UNLEVELED,
           offset: from + lines[line],
           time: Number.NaN,
         });

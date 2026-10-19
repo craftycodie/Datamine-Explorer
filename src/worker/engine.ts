@@ -12,7 +12,7 @@ import {
 } from "@blamnetwork/datamine/reading";
 import type { Filters, SearchSpec } from "../lib/filter";
 import { baseName } from "../lib/format";
-import type { DetailResult, FileStat, LiveStatus, LogEntry, Note, ReportFolderInfo, SearchStatus, SessionMeta, StatsSnapshot } from "../lib/types";
+import { type DetailResult, type FileStat, LEVEL_UNLEVELED, type LiveStatus, type LogEntry, type Note, type ReportFolderInfo, type SearchStatus, type SessionMeta, type StatsSnapshot } from "../lib/types";
 import type { MessageKey, Text } from "../localization";
 import { DatamineIndexer } from "./datamine-indexer";
 import { EntryIndex } from "./entry-index";
@@ -353,7 +353,7 @@ export class LogEngine {
         this.index.addSession(at, 0, entry.session?.version ?? "", entry.session?.session_id || undefined, time);
         return;
       }
-      this.index.add(at, 0, entry.level ?? -1, entry.category_path ? `${entry.category_path}:` : "", time, entry.event_index ?? -1);
+      this.index.add(at, 0, entry.level ?? LEVEL_UNLEVELED, entry.category_path ? `${entry.category_path}:` : "", time, entry.event_index ?? -1);
     });
     const header = log_header_from_datamine(file.header);
     this.headerRows = headerRows(header);

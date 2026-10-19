@@ -46,12 +46,9 @@ function cellText(id: ColumnId, entry: LogEntry): string {
   }
 }
 
-// The level badge's text; an entry written with no level (a console's debug output) shows a dash.
+// The level badge's text.
 function levelShort(entry: LogEntry): string {
-  if (LEVEL_SHORT[entry.level]) {
-    return LEVEL_SHORT[entry.level];
-  }
-  return entry.levelText.toLowerCase() === "none" ? "–" : (entry.levelText || "?").slice(0, 4).toUpperCase();
+  return LEVEL_SHORT[entry.level] ?? (entry.levelText || "?").slice(0, 4).toUpperCase();
 }
 
 // What a row shows as its message when it is not wrapped: one line, whole (a message cut short by the

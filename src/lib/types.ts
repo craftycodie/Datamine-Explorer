@@ -22,9 +22,10 @@ export interface ChangeEvent {
   kind: string;
 }
 
-// Severity names by level number; entries without a level use -1.
+// Severity names by level number.
 export const LEVEL_NAMES = ["verbose", "status", "message", "warning", "error", "critical"] as const;
-export const LEVEL_UNKNOWN = -1;
+// An entry without a level (a plain line, a console's debug output) counts as verbose.
+export const LEVEL_UNLEVELED = 0;
 
 export interface LogParameter {
   name: string;

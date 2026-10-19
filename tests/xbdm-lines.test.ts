@@ -7,11 +7,11 @@ import { debugEvent } from "../src/worker/xbdm-lines";
 const RECEIVED = new Date(2026, 9, 19, 13, 50, 0, 0).getTime();
 
 describe("Xbox 360 debug output", () => {
-  it("reads a game's line by its category, with no level, at the time it arrived", () => {
+  it("reads a game's line by its category, as verbose, at the time it arrived", () => {
     const event = debugEvent("networking:online:lsp: token=11, server acquired\r\n", RECEIVED, 0xf9000004);
     expect(event).toEqual({
       category_path: "networking:online:lsp",
-      level: -1,
+      level: 0,
       text: "networking:online:lsp: token=11, server acquired",
       thread_id: 0xf9000004,
       time_ms: RECEIVED,
@@ -45,11 +45,6 @@ describe("Xbox 360 debug output", () => {
     const event = debugEvent("Halo 3 loaded", RECEIVED);
     const line = entryLine({ ...(event as NonNullable<typeof event>), index: 0, session: 1 }, RECEIVED);
     expect(line).toContain(" verbose  xbdm: Halo 3 loaded");
-  });
-
-  it("spools an entry of no level as one", () => {
-    const line = entryLine({ category_path: "ui", index: 0, level: -1, session: 1, text: "ui: shown", time_ms: RECEIVED }, RECEIVED);
-    expect(line).toContain(" none     ui: shown");
   });
 
   it("makes an address of whatever was typed", () => {
