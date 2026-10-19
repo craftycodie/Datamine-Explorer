@@ -22,6 +22,8 @@ export interface Backend {
   listTree(root: string): Promise<FileNode[]>;
   // Opens `root` as a single file; reads work for that file alone.
   fileInfo(root: string): Promise<FileNode>;
+  // Opens several files to be read together, for several sources in one feed. Gives their nodes in order.
+  filesOpen(roots: string[]): Promise<FileNode[]>;
   // Whether a path can be opened by name: always on the desktop, in a browser only through the dev
   // server. A static build (GitHub Pages) has no /api, so it opens things by picking them.
   pathsSupported: boolean;
@@ -35,14 +37,15 @@ export interface Backend {
   onChanged(callback: (event: ChangeEvent) => void): Promise<() => void>;
   // The native dialog (Tauri) or the browser's. Gives the root to pass to listTree.
   pickFolder(): Promise<string | undefined>;
-  // The same for one file; the root goes to fileInfo.
-  pickFile(): Promise<string | undefined>;
+  // The same for one file; the root goes to fileInfo. With `keep`, what was picked before keeps its
+  // name and a file of the same name gets another (a browser knows a picked file by its name).
+  pickFile(options?: { keep?: boolean }): Promise<string | undefined>;
   // Browser: keeps what was picked as `root` under `key` so it can be reopened later. False when
   // it cannot be kept (a snapshot, or a path, which needs no handle).
   handleSave(key: string, root: string): Promise<boolean>;
   // Browser: the kept handle, with the browser asking for access again; must run in a click. Gives
-  // the root to open, or undefined when it is gone or access was refused.
-  handleRestore(key: string): Promise<{ root: string; isFile: boolean } | undefined>;
+  // the root to open, or undefined when it is gone or access was refused. `keep` as for pickFile.
+  handleRestore(key: string, options?: { keep?: boolean }): Promise<{ root: string; isFile: boolean } | undefined>;
   handleForget(key: string): Promise<void>;
   // a folder or file named on the command line (Tauri)
   startupPath(): Promise<string | undefined>;
@@ -85,6 +88,10 @@ function tauriBackend(): Backend {
     async fileInfo(root) {
       const { invoke } = await import("@tauri-apps/api/core");
       return invoke<FileNode>("open_file", { path: root });
+    },
+    async filesOpen(roots) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<FileNode[]>("open_files", { paths: roots });
     },
     handleForget: async () => undefined,
     handleRestore: async () => undefined,
@@ -422,6 +429,8 @@ function fileNode(name: string, file: File): FileNode {
 type Source =
   | { mode: "handle"; name: string; handle: FileSystemDirectoryHandle }
   | { mode: "snapshot"; name: string; byPath: Map<string, File> }
+  // several files read together: picked ones by name, the rest by path through the dev server
+  | { mode: "many" }
   | { mode: "file-handle"; name: string; handle: FileSystemFileHandle }
   | { mode: "file-snapshot"; name: string; file: File }
   // a real path on the machine running the dev server; `single` for one file
@@ -448,10 +457,37 @@ function browserBackend(): Backend {
     fileSnapshots.delete(name);
   };
 
+  // A name for something picked: its own, or with `keep` one no earlier pick has ("2/debug.txt").
+  const nameFor = (name: string, keep: boolean | undefined): string => {
+    const taken = (key: string) => picked.has(key) || snapshots.has(key) || fileHandles.has(key) || fileSnapshots.has(key);
+    if (!keep || !taken(name)) {
+      nameTake(name);
+      return name;
+    }
+    let n = 2;
+    while (taken(`${n}/${name}`)) {
+      n++;
+    }
+    return `${n}/${name}`;
+  };
+
   // files that sit next to one picked or saved, such as a sidecar
   const siblings = new Map<string, File>();
+  // of several files open together, the ones the dev server reads by path
+  let manyPaths = new Set<string>();
+  // whether a read goes to the dev server; a sidecar goes with its file
+  const byService = (path: string) =>
+    source.mode === "path" || (source.mode === "many" && (manyPaths.has(path) || (path.endsWith(".json") && manyPaths.has(path.slice(0, -5)))));
 
   const fileOf = async (path: string): Promise<File> => {
+    if (source.mode === "many") {
+      const handle = fileHandles.get(path);
+      const file = handle ? await handle.getFile() : (fileSnapshots.get(path) ?? siblings.get(path));
+      if (!file) {
+        throw new Error(`${path} is not one of the opened files`);
+      }
+      return file;
+    }
     const sibling = siblings.get(path);
     if (sibling && (source.mode === "file-handle" || source.mode === "file-snapshot")) {
       return sibling;
@@ -556,10 +592,27 @@ function browserBackend(): Backend {
       previous = nodesFlatten([node]);
       return node;
     },
+    async filesOpen(roots) {
+      const paths = roots.filter((root) => !fileHandles.has(root) && !fileSnapshots.has(root));
+      const byPath = new Map<string, FileNode>();
+      if (paths.length > 0) {
+        const nodes = await api<FileNode[]>("files", { paths: JSON.stringify(paths) });
+        paths.forEach((path, k) => byPath.set(path, nodes[k]));
+      }
+      const nodes: FileNode[] = [];
+      for (const root of roots) {
+        const handle = fileHandles.get(root);
+        const snapshot = fileSnapshots.get(root);
+        nodes.push(handle ? fileNode(root, await handle.getFile()) : snapshot ? fileNode(root, snapshot) : (byPath.get(root) as FileNode));
+      }
+      source = { mode: "many" };
+      manyPaths = new Set(paths.map((path) => byPath.get(path)?.path ?? path));
+      return nodes;
+    },
     async handleForget(key) {
       await handleDelete(key);
     },
-    async handleRestore(key) {
+    async handleRestore(key, options) {
       const handle = await handleGet(key);
       if (!handle) {
         return;
@@ -568,13 +621,13 @@ function browserBackend(): Backend {
       if ((await handle.requestPermission({ mode: "read" })) !== "granted") {
         return;
       }
-      nameTake(handle.name);
+      const name = nameFor(handle.name, options?.keep);
       if (handle.kind === "file") {
-        fileHandles.set(handle.name, handle);
+        fileHandles.set(name, handle as FileSystemFileHandle);
       } else {
-        picked.set(handle.name, handle);
+        picked.set(name, handle as FileSystemDirectoryHandle);
       }
-      return { isFile: handle.kind === "file", root: handle.name };
+      return { isFile: handle.kind === "file", root: name };
     },
     async handleSave(key, root) {
       const handle = picked.get(root) ?? fileHandles.get(root);
@@ -624,14 +677,14 @@ function browserBackend(): Backend {
     async pathKind(path) {
       return (await api<{ kind: "file" | "folder" | "missing" }>("kind", { path })).kind;
     },
-    async pickFile() {
+    async pickFile(options) {
       const picker = (window as PickerWindow).showOpenFilePicker;
       if (picker) {
         try {
           const [handle] = await picker.call(window, { multiple: false });
-          nameTake(handle.name);
-          fileHandles.set(handle.name, handle);
-          return handle.name;
+          const name = nameFor(handle.name, options?.keep);
+          fileHandles.set(name, handle);
+          return name;
         } catch {
           // dismissed
           return;
@@ -641,9 +694,9 @@ function browserBackend(): Backend {
       if (!file) {
         return;
       }
-      nameTake(file.name);
-      fileSnapshots.set(file.name, file);
-      return file.name;
+      const name = nameFor(file.name, options?.keep);
+      fileSnapshots.set(name, file);
+      return name;
     },
     async pickFolder() {
       const picker = (window as PickerWindow).showDirectoryPicker;
@@ -668,7 +721,7 @@ function browserBackend(): Backend {
       return name;
     },
     readRange: async (path, offset, length) => {
-      if (source.mode === "path") {
+      if (byService(path)) {
         return api<Uint8Array>("read", { length, offset, path });
       }
       const file = await fileOf(path);
@@ -712,7 +765,7 @@ function browserBackend(): Backend {
     },
     startupPath: async () => undefined,
     stat: async (path) => {
-      if (source.mode === "path") {
+      if (byService(path)) {
         return api<FileStat>("stat", { path });
       }
       const file = await fileOf(path);

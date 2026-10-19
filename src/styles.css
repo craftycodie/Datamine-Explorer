@@ -1248,10 +1248,31 @@ button.toggle.on {
   text-overflow: clip;
 }
 
+.logtable.wrap .cell-source,
 .logtable.wrap .cell-category,
 .logtable.wrap .cell-time,
 .logtable.wrap .cell-index {
   line-height: 16px;
+}
+
+/* several sources: their nicknames come first */
+.logtable.with-source .log-grid {
+  grid-template-columns: var(--col-source) var(--col-time) var(--col-index) var(--col-level) var(--col-category) minmax(var(--col-message-min), 1fr);
+}
+
+.cell-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.divider-source {
+  font-weight: 600;
+}
+
+.session-source {
+  font-weight: 600;
 }
 
 .log-row.severe {
@@ -1954,4 +1975,179 @@ button.link {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+/* --- several sources: the dialog that picks them and the pane that lists them */
+
+.dialog.sources-dialog {
+  width: 560px;
+}
+
+.source-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.source-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.source-kind {
+  display: flex;
+  flex: none;
+}
+
+.source-kind button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  color: var(--dim);
+}
+
+.source-kind button + button {
+  border-left: none;
+}
+
+.source-kind button.active {
+  color: var(--text);
+  background: var(--select);
+}
+
+.source-name {
+  flex: none;
+  width: 130px;
+  height: 26px;
+}
+
+.source-target {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.source-remove {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+span.source-remove {
+  display: inline-block;
+}
+
+.recent-nickname {
+  font-weight: 600;
+}
+
+.sources-recent {
+  max-width: none;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.dialog-error {
+  color: var(--exclude);
+}
+
+.sources-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.sources-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 0;
+}
+
+.source-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 24px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.source-item:hover {
+  background: var(--hover);
+}
+
+.source-item .menu-icon {
+  flex: none;
+  color: var(--dim);
+}
+
+.source-item-name {
+  font-weight: 600;
+}
+
+.source-item-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dim);
+}
+
+.source-state {
+  flex: none;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.source-state.live {
+  color: #89d185;
+}
+
+.source-state.connecting,
+.source-state.reconnecting {
+  color: #cca700;
+}
+
+.source-state.failed {
+  color: var(--exclude);
+}
+
+/* the cross only shows on the row the pointer is over */
+.source-item-remove {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 1;
+  visibility: hidden;
+  background: transparent;
+  border-color: transparent;
+}
+
+.source-item:hover .source-item-remove,
+.source-item-remove:focus-visible {
+  visibility: visible;
+}
+
+.source-item-remove:hover:not(:disabled) {
+  color: var(--exclude);
+}
+
+.source-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 6px;
 }

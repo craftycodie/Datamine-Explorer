@@ -84,7 +84,7 @@ export function DetailPane({
   if (!detail || selected === undefined) {
     return <div className="empty">Select a row to see its details.</div>;
   }
-  const { entry, around, aroundFrom: from } = detail;
+  const { entry, around, aroundFrom: from, aroundIds } = detail;
   if (entry.kind === "session") {
     return <SessionDetail count={selectedCount} detail={detail} />;
   }
@@ -107,6 +107,7 @@ export function DetailPane({
         </>
       )}
       <dl className="fields">
+        <Field label="source" value={entry.source} />
         <Field label="time" value={entry.timeText} />
         <Field label="entry" value={entry.ordinal} />
         <Field label="event index" value={entry.eventIndex} />
@@ -154,7 +155,7 @@ export function DetailPane({
       <div className="detail-label">Context</div>
       <div className="context">
         {around.map((other, i) => {
-          const index = from + i;
+          const index = aroundIds?.[i] ?? from + i;
           return (
             <div
               className={`context-row${index === selected ? " selected" : ""}`}

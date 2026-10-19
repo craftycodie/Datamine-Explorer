@@ -5,12 +5,14 @@ import { useCallback, useState } from "react";
 import { storedGet, storedSet } from "./stored";
 
 export const COLUMN_IDS = ["time", "index", "level", "category"] as const;
-export type ColumnId = (typeof COLUMN_IDS)[number];
+// with several sources open, the source's nickname comes first
+export const SOURCE_COLUMN_IDS = ["source", ...COLUMN_IDS] as const;
+export type ColumnId = (typeof SOURCE_COLUMN_IDS)[number];
 export type ColumnWidths = Record<ColumnId, number>;
 
 // What each column needs to show its content and its header label: a whole timestamp, five digits,
 // the level badge, a few characters of category.
-export const COLUMN_MINIMUMS: ColumnWidths = { category: 80, index: 48, level: 46, time: 92 };
+export const COLUMN_MINIMUMS: ColumnWidths = { category: 80, index: 48, level: 46, source: 48, time: 92 };
 export const COLUMN_MAXIMUM = 600;
 // The table never gets narrower than its fixed columns plus this much message.
 export const MESSAGE_MINIMUM = 240;
@@ -20,7 +22,7 @@ export const GRID_PADDING = 16;
 // "dmv." is from the app's old name, Datamine Viewer; kept so saved widths survive the rename.
 export const COLUMNS_KEY = "dmv.columns";
 
-export const COLUMN_DEFAULTS: ColumnWidths = { category: 160, index: 64, level: 52, time: 96 };
+export const COLUMN_DEFAULTS: ColumnWidths = { category: 160, index: 64, level: 52, source: 90, time: 96 };
 
 export function widthClamp(id: ColumnId, width: number): number {
   return Math.round(Math.min(COLUMN_MAXIMUM, Math.max(COLUMN_MINIMUMS[id], width)));
@@ -31,7 +33,7 @@ export function columnsParse(text: string | null): ColumnWidths {
   const widths = { ...COLUMN_DEFAULTS };
   try {
     const stored = JSON.parse(text ?? "{}") as Partial<Record<ColumnId, unknown>>;
-    for (const id of COLUMN_IDS) {
+    for (const id of SOURCE_COLUMN_IDS) {
       const value = stored[id];
       if (typeof value === "number" && Number.isFinite(value)) {
         widths[id] = widthClamp(id, value);
@@ -44,21 +46,21 @@ export function columnsParse(text: string | null): ColumnWidths {
 }
 
 // The narrowest the grid may get: fixed columns, gaps, padding and a little message.
-export function gridMinimum(widths: ColumnWidths): number {
-  const fixed = COLUMN_IDS.reduce((sum, id) => sum + widths[id], 0);
-  return fixed + COLUMN_IDS.length * COLUMN_GAP + MESSAGE_MINIMUM + GRID_PADDING;
+export function gridMinimum(widths: ColumnWidths, ids: readonly ColumnId[] = COLUMN_IDS): number {
+  const fixed = ids.reduce((sum, id) => sum + widths[id], 0);
+  return fixed + ids.length * COLUMN_GAP + MESSAGE_MINIMUM + GRID_PADDING;
 }
 
-// The variables the grid reads.
-export function columnVariables(widths: ColumnWidths): Record<string, string> {
-  const fixed = COLUMN_IDS.reduce((sum, id) => sum + widths[id], 0);
+// The variables the grid reads, for the columns shown.
+export function columnVariables(widths: ColumnWidths, ids: readonly ColumnId[] = COLUMN_IDS): Record<string, string> {
+  const fixed = ids.reduce((sum, id) => sum + widths[id], 0);
   const variables: Record<string, string> = {
-    "--grid-min": `${gridMinimum(widths)}px`,
+    "--grid-min": `${gridMinimum(widths, ids)}px`,
     "--col-message-min": `${MESSAGE_MINIMUM}px`,
     // where the message column starts, for the scrollbar under it
-    "--msg-left": `${GRID_PADDING / 2 + fixed + COLUMN_IDS.length * COLUMN_GAP}px`,
+    "--msg-left": `${GRID_PADDING / 2 + fixed + ids.length * COLUMN_GAP}px`,
   };
-  for (const id of COLUMN_IDS) {
+  for (const id of ids) {
     variables[`--col-${id}`] = `${widths[id]}px`;
   }
   return variables;

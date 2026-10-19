@@ -3,6 +3,7 @@
 import type { CallRequest, CallResult, WorkerRequest, WorkerResponse } from "../worker/protocol";
 import { backend } from "./backend";
 import type { Filters, SearchSpec } from "./filter";
+import type { SourceSpec } from "./types";
 
 export class LogClient {
   private worker: Worker;
@@ -65,6 +66,10 @@ export class LogClient {
 
   connect(id: number, url: string, fresh: boolean) {
     this.post({ fresh, id, spool: backend.kind === "tauri" ? "tauri" : "opfs", type: "connect", url });
+  }
+
+  sources(id: number, sources: SourceSpec[]) {
+    this.post({ id, sources, spool: backend.kind === "tauri" ? "tauri" : "opfs", type: "sources" });
   }
 
   disconnect(id: number) {

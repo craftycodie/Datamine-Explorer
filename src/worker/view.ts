@@ -85,6 +85,11 @@ export class View {
     return this.shown().length;
   }
 
+  // entries of the index taken in so far
+  get processedCount(): number {
+    return this.processed;
+  }
+
   get matchCount(): number {
     return this.matchedPassing.length;
   }

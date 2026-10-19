@@ -48,6 +48,7 @@ describe("column widths", () => {
       category: 150,
       index: 64,
       level: 600,
+      source: COLUMN_DEFAULTS.source,
       time: COLUMN_MINIMUMS.time,
     });
     expect(widthClamp("index", -5)).toBe(COLUMN_MINIMUMS.index);

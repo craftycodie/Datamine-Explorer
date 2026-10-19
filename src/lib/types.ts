@@ -61,6 +61,8 @@ export interface LogEntry {
   raw?: string;
   // the event server's session number, on live entries
   sessionNumber?: number;
+  // the nickname of the source it came from, when several are open together
+  source?: string;
 }
 
 export interface ReportFolderInfo {
@@ -100,6 +102,8 @@ export interface SessionInfo {
   version: string;
   sessionId?: string;
   time?: number;
+  // the nickname of its source, when several are open together
+  source?: string;
 }
 
 // The entries between one divider and the next.
@@ -147,6 +151,8 @@ export interface DetailResult {
   // the entries around it, unfiltered, starting at entry id `aroundFrom`
   around: LogEntry[];
   aroundFrom: number;
+  // the entry ids of `around`, when they are not consecutive from `aroundFrom` (several sources)
+  aroundIds?: number[];
   // for a session row
   sessionStats?: SessionStats;
 }
@@ -175,4 +181,27 @@ export interface LiveStatus {
   memoryBytes: number;
   // the log file the entries are written to, once the first of them is; "Save as" copies it
   spoolPath?: string;
+}
+
+// One of several files or servers shown together. `key` tells them apart for as long as they are open.
+export interface SourceSpec {
+  key: string;
+  // what the user called it; shown in the source column
+  name: string;
+  kind: "file" | "server";
+  // the path the backend reads by, or the server URL
+  target: string;
+}
+
+export type SourceState = "loading" | "ready" | "failed" | LiveState;
+
+// How one of several sources is doing, as the worker reports it.
+export interface SourceStatus {
+  key: string;
+  state: SourceState;
+  error?: string;
+  // events held, not counting dividers
+  entries: number;
+  // a server's resolved prefix
+  prefix?: string;
 }

@@ -2,15 +2,19 @@ import { useMemo } from "react";
 import { recentLabel, recentTitle, type RecentItem, type RecentKind } from "../lib/recent";
 import { Menu, type MenuEntry } from "./Menu";
 
-const KIND_NAMES: Record<RecentKind, string> = { file: "file", folder: "folder", server: "server" };
+// what can be open: the recent kinds, and several sources together
+export type IconKind = RecentKind | "sources";
 
-export function KindIcon({ kind }: { kind: RecentKind }) {
+const KIND_NAMES: Record<IconKind, string> = { file: "file", folder: "folder", server: "server", sources: "sources" };
+
+export function KindIcon({ kind }: { kind: IconKind }) {
   const common = { fill: "none", stroke: "currentColor", strokeLinejoin: "round" as const, strokeWidth: 1.2 };
   return (
     <svg aria-label={KIND_NAMES[kind]} className="menu-icon" height="14" role="img" viewBox="0 0 16 16" width="14">
       <title>{KIND_NAMES[kind]}</title>
       {kind === "file" && <path d="M3.5 1.5h5.5l3.5 3.5v9.5h-9z M9 1.5v3.5h3.5" {...common} />}
       {kind === "folder" && <path d="M1.5 3.5h4l1.5 1.5h7.5v8h-13z" {...common} />}
+      {kind === "sources" && <path d="M5.5 1.5h5l2.5 2.5v7.5h-7.5z M3 4v10.5h7.5" {...common} />}
       {kind === "server" && (
         <>
           <circle cx="8" cy="8" r="6.2" {...common} />
@@ -33,6 +37,7 @@ export function FileMenu({
   onDisconnect,
   onOpenFile,
   onOpenFolder,
+  onOpenMultiple,
   onRecent,
   onReload,
   onSaveSession,
@@ -48,6 +53,7 @@ export function FileMenu({
   onDisconnect: () => void;
   onOpenFile: () => void;
   onOpenFolder: () => void;
+  onOpenMultiple: () => void;
   onRecent: (item: RecentItem) => void;
   onReload: () => void;
   onSaveSession: () => void;
@@ -58,6 +64,7 @@ export function FileMenu({
       { action: { hint: "Ctrl+O", icon: <KindIcon kind="file" />, id: "file", label: "Open File...", run: onOpenFile }, kind: "action" },
       { action: { hint: "Ctrl+Shift+O", icon: <KindIcon kind="folder" />, id: "folder", label: "Open Folder...", run: onOpenFolder }, kind: "action" },
       { action: { hint: "Ctrl+K", icon: <KindIcon kind="server" />, id: "connect", label: "Connect...", run: onConnect }, kind: "action" },
+      { action: { icon: <KindIcon kind="sources" />, id: "multiple", label: "Open Multiple...", run: onOpenMultiple }, kind: "action" },
     ];
     if (canSaveSession) {
       list.push({ action: { id: "save-session", label: "Save Session As...", run: onSaveSession }, kind: "action" });
@@ -86,7 +93,7 @@ export function FileMenu({
       list.push({ id: "clear-separator", kind: "separator" }, { action: { id: "clear", label: "Clear recent", run: onClearRecent }, kind: "action" });
     }
     return list;
-  }, [canClose, canReload, canSaveSession, connected, onClearRecent, onClose, onConnect, onDisconnect, onOpenFile, onOpenFolder, onRecent, onReload, onSaveSession, recents]);
+  }, [canClose, canReload, canSaveSession, connected, onClearRecent, onClose, onConnect, onDisconnect, onOpenFile, onOpenFolder, onOpenMultiple, onRecent, onReload, onSaveSession, recents]);
 
   return <Menu entries={entries} id="file" label="File" />;
 }

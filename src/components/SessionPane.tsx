@@ -141,6 +141,7 @@ export function SessionPane({ data, onJump }: { data: LogData; onJump: (session:
             {stats.sessions.map((session) => (
               <div className="session-item" key={session.id} onClick={() => onJump(session)} title="Jump to this session">
                 <span className="session-number">{session.number}</span>
+                {session.source && <span className="session-source">{session.source}</span>}
                 <span className="session-time">{session.time ? dateTimeText(session.time) : ""}</span>
                 <span className="dim">{session.version}</span>
               </div>

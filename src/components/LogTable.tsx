@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { COLUMN_IDS, COLUMN_MAXIMUM, COLUMN_MINIMUMS, type ColumnId, type Columns, columnVariables, gridMinimum, widthClamp } from "../lib/columns";
+import { COLUMN_IDS, COLUMN_MAXIMUM, COLUMN_MINIMUMS, type ColumnId, type Columns, columnVariables, gridMinimum, SOURCE_COLUMN_IDS, widthClamp } from "../lib/columns";
 import { dateTimeText, timeColumnText } from "../lib/format";
 import { RowHeights } from "../lib/row-heights";
 import type { RowSource } from "../lib/rows";
@@ -25,8 +25,10 @@ const TEXT_LIMIT = 1500;
 const MESSAGE_WIDTH_MAXIMUM = 20_000;
 // A jump to a row is repeated this many times as the rows around it are measured.
 const JUMP_PASSES = 4;
+// Scrolls this soon after a wheel turn are the wheel's (smooth scrolling spreads one turn out).
+const WHEEL_SETTLE_MS = 500;
 
-const COLUMN_LABELS: Record<ColumnId, string> = { category: "category", index: "index", level: "level", time: "time" };
+const COLUMN_LABELS: Record<ColumnId, string> = { category: "category", index: "index", level: "level", source: "source", time: "time" };
 
 // The text a column shows for an entry, for fitting its width.
 function cellText(id: ColumnId, entry: LogEntry): string {
@@ -39,6 +41,8 @@ function cellText(id: ColumnId, entry: LogEntry): string {
       return LEVEL_SHORT[entry.level] ?? (entry.levelText || "?").slice(0, 4).toUpperCase();
     case "category":
       return entry.category;
+    case "source":
+      return entry.source ?? "";
   }
 }
 
@@ -60,6 +64,7 @@ function Divider({ entry }: { entry: LogEntry }) {
   const session = entry.session;
   return (
     <>
+      {entry.source && <span className="divider-source">{entry.source}</span>}
       <span className="divider-title">Session {session?.number}</span>
       <span className="divider-version">{session?.version}</span>
       {session?.sessionId && <span className="divider-id">{session.sessionId}</span>}
@@ -82,6 +87,7 @@ export function LogTable({
   highlight,
   onCopy,
   onFollowBreak,
+  onFollowResume,
   onSelectAll,
   onSelectRow,
   rows,
@@ -90,6 +96,7 @@ export function LogTable({
   selectedRow,
   selection,
   sessionKey,
+  showSource,
   viewVersion,
   wrap,
 }: {
@@ -100,6 +107,8 @@ export function LogTable({
   // copy what is selected: the original lines, or just the messages
   onCopy: (mode: "raw" | "message") => void;
   onFollowBreak: () => void;
+  // the user scrolled back down to the end
+  onFollowResume: () => void;
   onSelectAll: () => void;
   // a row was clicked or moved to with the keys; `entry` is its content when it is loaded
   onSelectRow: (row: number, entry: LogEntry | undefined, modifiers: SelectModifiers) => void;
@@ -112,6 +121,8 @@ export function LogTable({
   selection: Selection;
   // changes when another file or connection is shown; what was learned of its widest message is dropped
   sessionKey: string;
+  // several sources are open: each row says which it came from
+  showSource: boolean;
   // changes when the rows move (filters, search), which makes every measured height stale
   viewVersion: number;
   // long messages take several lines
@@ -119,6 +130,7 @@ export function LogTable({
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
+  const columnIds = showSource ? SOURCE_COLUMN_IDS : COLUMN_IDS;
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
   // the widest message seen since the file was opened, which only grows
@@ -353,9 +365,10 @@ export function LogTable({
     }
   });
 
-  // The pinned divider is asked for when the first row leaves the span the last answer covers.
+  // The pinned divider is asked for when the first row leaves the span the last answer covers. Several
+  // sources have sessions of their own side by side, so none is pinned then.
   useEffect(() => {
-    if (count === 0) {
+    if (count === 0 || showSource) {
       setPin(undefined);
       return;
     }
@@ -370,7 +383,7 @@ export function LogTable({
     return () => {
       current = false;
     };
-  }, [count, first, pin, rows, viewVersion]);
+  }, [count, first, pin, rows, showSource, viewVersion]);
 
   useEffect(() => {
     if (pin && pin.row >= 0) {
@@ -400,6 +413,53 @@ export function LogTable({
   }, [scrollRequest]);
 
   const closeMenu = useCallback(() => setMenu(undefined), []);
+
+  // --- following: scrolling up lets go of the tail, a wheel or a scrollbar drag back down to the end picks it up
+
+  const wheelAt = useRef(0);
+  const scrollbarHeld = useRef(false);
+  useEffect(() => {
+    const release = () => {
+      scrollbarHeld.current = false;
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("blur", release);
+    };
+  }, []);
+
+  const atBottom = (element: HTMLElement) => element.scrollTop + element.clientHeight >= element.scrollHeight - 2;
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const element = e.currentTarget;
+    scrollbarHeld.current = e.target === element && e.nativeEvent.offsetX >= element.clientWidth;
+    onFollowBreak();
+  };
+
+  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY < 0) {
+      onFollowBreak();
+    } else if (e.deltaY > 0) {
+      wheelAt.current = performance.now();
+      // already at the end, there is no scroll to wait for
+      if (!follow && atBottom(e.currentTarget)) {
+        onFollowResume();
+      }
+    }
+  };
+
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const element = e.currentTarget;
+    setScrollTop(element.scrollTop);
+    // only the user's own scrolling counts; jumps and row measuring scroll too
+    const byUser = scrollbarHeld.current || performance.now() - wheelAt.current < WHEEL_SETTLE_MS;
+    if (byUser && follow !== atBottom(element)) {
+      // a drag can reach the end and go back up again before it lets go
+      (follow ? onFollowBreak : onFollowResume)();
+    }
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = { ArrowDown: 1, ArrowUp: -1, PageDown: visible - 1, PageUp: 1 - visible }[e.key];
@@ -442,7 +502,7 @@ export function LogTable({
     handle.onpointermove = (move) => {
       width = widthClamp(id, from + move.clientX - origin);
       element.style.setProperty(`--col-${id}`, `${width}px`);
-      element.style.setProperty("--grid-min", `${gridMinimum({ ...columns.widths, [id]: width })}px`);
+      element.style.setProperty("--grid-min", `${gridMinimum({ ...columns.widths, [id]: width }, columnIds)}px`);
     };
     handle.onpointerup = handle.onpointercancel = () => {
       handle.onpointermove = handle.onpointerup = handle.onpointercancel = null;
@@ -529,6 +589,11 @@ export function LogTable({
     const message = wrap ? (entry.message.length > TEXT_LIMIT ? `${entry.message.slice(0, TEXT_LIMIT)}...` : entry.message) : messageLine(entry);
     items.push(
       <div className={classes.join(" ")} data-row={row} key={row} {...rowEvents(row, entry)} ref={rowRef} style={style}>
+        {showSource && (
+          <span className="cell-source" title={entry.source}>
+            {entry.source}
+          </span>
+        )}
         <span className="cell-time">{timeColumnText(entry.timeText)}</span>
         <span className="cell-index">{entry.eventIndex ?? entry.ordinal}</span>
         <span>
@@ -572,19 +637,19 @@ export function LogTable({
 
   return (
     <div
-      className={wrap ? "logtable wrap" : "logtable"}
+      className={`logtable${wrap ? " wrap" : ""}${showSource ? " with-source" : ""}`}
       onDragStart={(e) => e.preventDefault()}
       onKeyDown={onKeyDown}
       onMouseDown={() => window.getSelection()?.removeAllRanges()}
-      onPointerDown={onFollowBreak}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-      onWheel={(e) => e.deltaY < 0 && onFollowBreak()}
+      onPointerDown={onPointerDown}
+      onScroll={onScroll}
+      onWheel={onWheel}
       ref={scroller}
-      style={columnVariables(columns.widths)}
+      style={columnVariables(columns.widths, columnIds)}
       tabIndex={0}
     >
       <div className="log-header log-grid">
-        {COLUMN_IDS.map((id) => (
+        {columnIds.map((id) => (
           <span key={id}>
             {COLUMN_LABELS[id]}
             <span

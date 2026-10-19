@@ -2,8 +2,7 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { backend } from "../lib/backend";
 import { openExternal } from "../lib/external";
 import { DOWNLOAD_URL } from "../lib/versions";
-import type { RecentKind } from "../lib/recent";
-import { KindIcon } from "./FileMenu";
+import { type IconKind, KindIcon } from "./FileMenu";
 import { WindowControls, useWindowState } from "./WindowControls";
 
 // A button that shows or hides a side pane; pressed while the pane is shown.
@@ -61,7 +60,7 @@ export function Toolbar({
   // a server is connected
   connected: boolean;
   // what is open, by name; the full path or URL is its tooltip
-  label?: { kind: RecentKind; name: string; title: string };
+  label?: { kind: IconKind; name: string; title: string };
   leftShown: boolean;
   // the File and View menus, after the app's name
   menus: ReactNode;

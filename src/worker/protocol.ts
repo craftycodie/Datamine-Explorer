@@ -1,6 +1,6 @@
 import type { Filters, SearchSpec } from "../lib/filter";
 import type { IdRange } from "../lib/selection";
-import type { DetailResult, FileStat, LiveStatus, LogEntry, SearchStatus, SessionMeta, StatsSnapshot } from "../lib/types";
+import type { DetailResult, FileStat, LiveStatus, LogEntry, SearchStatus, SessionMeta, SourceSpec, SourceStatus, StatsSnapshot } from "../lib/types";
 
 // Questions the main thread asks about the open file; each is answered with a "result".
 export type CallRequest =
@@ -75,6 +75,9 @@ export type WorkerRequest =
   | { type: "connect"; id: number; url: string; fresh: boolean; spool: SpoolMode }
   // let go of the server, keeping the entries
   | { type: "disconnect"; id: number }
+  // several files and servers in one feed, ordered by time. Sent with the whole list each time it
+  // changes; sources whose key is still there carry on.
+  | { type: "sources"; id: number; sources: SourceSpec[]; spool: SpoolMode }
   // nothing is open any more: drop whatever is held
   | { type: "close"; id: number }
   | { type: "filters"; filters: Filters; onlyMatches: boolean }
@@ -104,6 +107,8 @@ export type WorkerResponse =
   | { type: "progress"; id: number; done: number; total: number }
   | { type: "stats"; id: number; stats: StatsSnapshot }
   | { type: "live"; id: number; status: LiveStatus }
+  // how each of several sources is doing
+  | { type: "sources"; id: number; sources: SourceStatus[] }
   // The filtered row count changed. `version` changes when rows moved or changed, `flags` when only
   // their match marks did, and `serial` with every message. Rows from `dirtyFrom` on may differ.
   | { type: "view"; id: number; serial: number; version: number; flags: number; count: number; dirtyFrom: number }

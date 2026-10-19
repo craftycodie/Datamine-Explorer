@@ -11,6 +11,8 @@ export interface RecentItem {
   target: string;
   // picked in a browser: the handle is kept under recentKey
   handle?: boolean;
+  // what it was called when last opened among several sources
+  nickname?: string;
 }
 
 // "dmv." is from the app's old name, Datamine Viewer; kept so the recent list survives the rename.
@@ -30,7 +32,8 @@ export function recentLabel(item: RecentItem): string {
 }
 
 export function recentTitle(item: RecentItem): string {
-  return item.handle ? `${item.target} (picked in this browser)` : item.target;
+  const where = item.handle ? `${item.target} (picked in this browser)` : item.target;
+  return item.nickname ? `${item.nickname}: ${where}` : where;
 }
 
 function valid(value: unknown): value is RecentItem {
@@ -40,7 +43,8 @@ function valid(value: unknown): value is RecentItem {
     item !== null &&
     (item.kind === "file" || item.kind === "folder" || item.kind === "server") &&
     typeof item.target === "string" &&
-    item.target !== ""
+    item.target !== "" &&
+    (item.nickname === undefined || typeof item.nickname === "string")
   );
 }
 
@@ -59,9 +63,11 @@ export function recentStore(items: RecentItem[]) {
 
 // `item` goes first. Returns the new list and the items that fell off it (or were replaced), whose
 // handles are no longer needed.
+// Opened on its own, it keeps the nickname it had among several sources.
 export function recentPush(items: RecentItem[], item: RecentItem): { items: RecentItem[]; dropped: RecentItem[] } {
   const rest = items.filter((other) => !same(other, item));
-  const next = [item, ...rest].slice(0, RECENT_MAXIMUM);
+  const nickname = item.nickname ?? items.find((other) => same(other, item))?.nickname;
+  const next = [nickname ? { ...item, nickname } : item, ...rest].slice(0, RECENT_MAXIMUM);
   const dropped = [...rest.slice(RECENT_MAXIMUM - 1), ...items.filter((other) => same(other, item) && other.handle && !item.handle)];
   return { dropped, items: next };
 }

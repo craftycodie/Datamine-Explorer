@@ -3,6 +3,7 @@
 //
 //   GET /api/list?root=<dir>                        the tree; also sets the root (not with quiet=1)
 //   GET /api/file?path=<file>                       the file's node; also sets the root to that one file
+//   GET /api/files?paths=<json array>               the nodes of several files; also sets the root to those
 //   GET /api/kind?path=<path>                       { kind: "file" | "folder" | "missing" }
 //   GET /api/stat?path=<file>                       { size, modifiedMs }
 //   GET /api/read?path=<file>&offset=N&length=N     raw bytes
@@ -20,6 +21,8 @@ const READ_MAXIMUM = 256 * 1024 * 1024;
 let root;
 // set when a single file was opened: nothing else is readable
 let onlyFile;
+// set when several files were opened together: only those are readable
+let onlyFiles;
 
 async function directoryRead(dir, depth, budget) {
   let entries;
@@ -59,10 +62,17 @@ async function directoryRead(dir, depth, budget) {
 }
 
 async function insideRoot(file) {
+  const real = await fs.realpath(file);
+  if (onlyFiles) {
+    // each file's sidecar reads with it
+    if (!onlyFiles.has(real) && !(real.endsWith(".json") && onlyFiles.has(real.slice(0, -5)))) {
+      throw new Error(`${file} is not one of the opened files`);
+    }
+    return real;
+  }
   if (!root) {
     throw new Error("no folder is open");
   }
-  const real = await fs.realpath(file);
   // a single file's sidecar reads with it
   if (onlyFile && real !== onlyFile && real !== `${onlyFile}.json`) {
     throw new Error(`${file} is outside the opened file`);
@@ -94,6 +104,7 @@ export async function handleApi(req, res) {
         if (!quiet) {
           root = real;
           onlyFile = undefined;
+          onlyFiles = undefined;
         }
         json(200, await directoryRead(real, 0, { left: ENTRIES_MAXIMUM }));
         return;
@@ -108,8 +119,26 @@ export async function handleApi(req, res) {
         if (!quiet) {
           root = path.dirname(real);
           onlyFile = real;
+          onlyFiles = undefined;
         }
         json(200, { children: [], isDir: false, modifiedMs: Math.round(stat.mtimeMs), name: path.basename(real), path: real, size: stat.size });
+        return;
+      }
+      case "/files": {
+        const wanted = JSON.parse(url.searchParams.get("paths") ?? "[]");
+        const nodes = [];
+        for (const one of wanted) {
+          const real = await fs.realpath(String(one));
+          const stat = await fs.stat(real);
+          if (!stat.isFile()) {
+            throw new Error(`${one} is not a file`);
+          }
+          nodes.push({ children: [], isDir: false, modifiedMs: Math.round(stat.mtimeMs), name: path.basename(real), path: real, size: stat.size });
+        }
+        onlyFiles = new Set(nodes.map((node) => node.path));
+        onlyFile = undefined;
+        root = undefined;
+        json(200, nodes);
         return;
       }
       case "/kind": {

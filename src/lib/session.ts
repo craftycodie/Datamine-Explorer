@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkerResponse } from "../worker/protocol";
 import { LogClient } from "./log-client";
-import type { FileLoadInfo, LiveStatus, LogStats, SearchStatus, SessionMeta, StatsSnapshot } from "./types";
+import type { FileLoadInfo, LiveStatus, LogStats, SearchStatus, SessionMeta, SourceSpec, SourceStatus, StatsSnapshot } from "./types";
 import { LEVEL_NAMES } from "./types";
 
 // What the worker last said about the rows. See the "view" message.
@@ -16,10 +16,13 @@ export interface ViewState {
   dirtyFrom: number;
 }
 
-// What the worker opens: a file by path, or an event server by URL. `nonce` makes a second
-// connection to the same URL a new source.
-// `fresh` leaves an earlier spool of the same server alone.
-export type LogSource = { kind: "file"; path: string } | { kind: "live"; url: string; nonce: number; fresh: boolean };
+// What the worker opens: a file by path, an event server by URL, or several of those in one feed.
+// `nonce` makes a second connection to the same URL a new source, and a changed list of sources a new
+// view. `fresh` leaves an earlier spool of the same server alone.
+export type LogSource =
+  | { kind: "file"; path: string }
+  | { kind: "live"; url: string; nonce: number; fresh: boolean }
+  | { kind: "multi"; sources: SourceSpec[]; nonce: number };
 
 // The server status tagged with the connection it belongs to, so a late one is not mistaken for the next.
 export type LiveView = LiveStatus & { nonce: number };
@@ -28,6 +31,8 @@ export interface LogData {
   file?: FileLoadInfo;
   // set while the source is an event server
   live?: LiveView;
+  // how each source is doing, while several are open
+  sources?: SourceStatus[];
   meta?: SessionMeta;
   stats: LogStats;
   // changes whenever `stats` does, for components that memoize on it
@@ -63,7 +68,7 @@ export function useLogSession(source: LogSource | undefined, onView: (view: View
     view: VIEW_EMPTY,
   }));
   const [client, setClient] = useState<LogClient>();
-  const live = useRef({ data, id: 0, path: undefined as string | undefined, isLive: false, nonce: 0 });
+  const live = useRef({ data, id: 0, path: undefined as string | undefined, isLive: false, multi: false, nonce: 0 });
   const flushTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onViewRef = useRef(onView);
   onViewRef.current = onView;
@@ -104,6 +109,7 @@ export function useLogSession(source: LogSource | undefined, onView: (view: View
             file: l.path ? { indexed: 0, loading: true, modifiedMs: 0, path: l.path, size: 0 } : undefined,
             live: undefined,
             meta: undefined,
+            sources: l.multi ? l.data.sources : undefined,
             stats: statsEmpty(),
             statsVersion: l.data.statsVersion + 1,
           };
@@ -124,6 +130,9 @@ export function useLogSession(source: LogSource | undefined, onView: (view: View
           break;
         case "live":
           patch({ live: { ...message.status, nonce: l.nonce } });
+          break;
+        case "sources":
+          patch({ sources: message.sources });
           break;
         case "stats":
           patch({ stats: statsFrom(message.stats), statsVersion: l.data.statsVersion + 1 });
@@ -159,20 +168,23 @@ export function useLogSession(source: LogSource | undefined, onView: (view: View
 
   useEffect(() => {
     const l = live.current;
-    l.path = source ? (source.kind === "file" ? source.path : source.url) : undefined;
+    l.path = source ? (source.kind === "file" ? source.path : source.kind === "live" ? source.url : "sources") : undefined;
     l.isLive = source?.kind === "live";
-    l.nonce = source?.kind === "live" ? source.nonce : 0;
+    l.multi = source?.kind === "multi";
+    l.nonce = source?.kind === "live" || source?.kind === "multi" ? source.nonce : 0;
     l.id++;
     if (!client) {
       return;
     }
     if (source?.kind === "live") {
       client.connect(l.id, source.url, source.fresh);
+    } else if (source?.kind === "multi") {
+      client.sources(l.id, source.sources);
     } else if (source) {
       client.open(l.id, source.path);
     } else {
       client.close(l.id);
-      l.data = { ...l.data, file: undefined, live: undefined, meta: undefined, stats: statsEmpty(), statsVersion: l.data.statsVersion + 1, view: VIEW_EMPTY };
+      l.data = { ...l.data, file: undefined, live: undefined, meta: undefined, sources: undefined, stats: statsEmpty(), statsVersion: l.data.statsVersion + 1, view: VIEW_EMPTY };
       onViewRef.current(VIEW_EMPTY);
       setData(l.data);
     }
@@ -181,7 +193,8 @@ export function useLogSession(source: LogSource | undefined, onView: (view: View
   // Called when the folder watcher says something changed.
   const refresh = useCallback(() => {
     const l = live.current;
-    if (l.path && !l.isLive && client) {
+    // several sources are polled by the worker itself
+    if (l.path && !l.isLive && !l.multi && client) {
       client.refresh(l.id);
     }
   }, [client]);
@@ -189,7 +202,7 @@ export function useLogSession(source: LogSource | undefined, onView: (view: View
   // Reads the open file again from the start.
   const reload = useCallback(() => {
     const l = live.current;
-    if (l.path && !l.isLive && client) {
+    if (l.path && !l.isLive && !l.multi && client) {
       l.id++;
       client.open(l.id, l.path);
     }

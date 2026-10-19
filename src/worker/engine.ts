@@ -12,7 +12,7 @@ import {
 } from "@blamnetwork/datamine/reading";
 import type { Filters, SearchSpec } from "../lib/filter";
 import { baseName } from "../lib/format";
-import type { DetailResult, FileStat, LiveStatus, LogEntry, ReportFolderInfo, SearchStatus, SessionMeta } from "../lib/types";
+import type { DetailResult, FileStat, LiveStatus, LogEntry, ReportFolderInfo, SearchStatus, SessionMeta, StatsSnapshot } from "../lib/types";
 import { DatamineIndexer } from "./datamine-indexer";
 import { EntryIndex } from "./entry-index";
 import { entryMap, FORMAT_NAMES } from "./entry-map";
@@ -514,6 +514,7 @@ export class LogEngine {
       if (generation === this.generation) {
         this.busy = false;
         this.afterPass();
+        this.emit({ id: this.id, type: "done" });
       }
     }
     return { events: this.index.total - this.index.sessions.length, sidecar: this.sidecar as Sidecar, size: this.size, total: this.index.total };
@@ -605,8 +606,8 @@ export class LogEngine {
     return this.overlayIds[row - length];
   }
 
-  // Rows for the table, from the cache when it has them.
-  private async rowsFetch(ids: number[]): Promise<LogEntry[]> {
+  // Rows for the table, from the cache when it has them; undefined where an entry could not be read.
+  private async rowsFetch(ids: number[]): Promise<(LogEntry | undefined)[]> {
     const store = this.store;
     if (!store) {
       return [];
@@ -640,7 +641,23 @@ export class LogEngine {
         this.cache.delete(this.cache.keys().next().value as number);
       }
     }
-    return found.filter((entry): entry is LogEntry => entry !== undefined);
+    return found;
+  }
+
+  // Entries as table rows: marked when the search matched them, and a divider with its session's time.
+  private async tableRows(ids: number[]): Promise<(LogEntry | undefined)[]> {
+    const entries = await this.rowsFetch(ids);
+    const matching = this.view.searchActive;
+    return entries.map((entry, k) =>
+      entry
+        ? {
+            ...entry,
+            matched: matching && this.view.isMatch(ids[k]),
+            // a divider shows the time of its session's first event
+            time: entry.kind === "session" ? (entry.time ?? this.sessionAt(ids[k])?.time) : entry.time,
+          }
+        : undefined
+    );
   }
 
   private async rows(from: number, to: number): Promise<RowsResult> {
@@ -651,16 +668,10 @@ export class LogEngine {
     for (let row = Math.max(0, from); row < end; row++) {
       ids.push(this.entryAtRow(row) as number);
     }
-    const entries = await this.rowsFetch(ids);
-    const matching = this.view.searchActive;
+    const entries = await this.tableRows(ids);
     return {
       from: Math.max(0, from),
-      rows: entries.map((entry, k) => ({
-        ...entry,
-        matched: matching && this.view.isMatch(ids[k]),
-        // a divider shows the time of its session's first event
-        time: entry.kind === "session" ? (entry.time ?? this.sessionAt(ids[k])?.time) : entry.time,
-      })),
+      rows: entries.filter((entry): entry is LogEntry => entry !== undefined),
       serial,
       version,
     };
@@ -683,7 +694,7 @@ export class LogEngine {
       ids.push(at);
     }
     const [full] = await store.entries([id], true);
-    const around = await this.rowsFetch(ids);
+    const around = (await this.rowsFetch(ids)).filter((entry): entry is LogEntry => entry !== undefined);
     const session = this.sessionAt(id);
     const result: DetailResult = { around, aroundFrom: first, entry: full };
     if (session) {
@@ -812,6 +823,17 @@ export class LogEngine {
 
   // --- session dividers
 
+  // The ids of the session rows, committed and overlay, ascending.
+  sessionIds(): number[] {
+    const starts = this.index.sessions.map((session) => session.id);
+    this.index.overlay.forEach((entry, at) => {
+      if (entry.session) {
+        starts.push(this.index.count + at);
+      }
+    });
+    return starts;
+  }
+
   // The divider row at or above `row`, and the row the next one is at (or the end of the table).
   private dividerNear(row: number): DividerResult {
     const total = this.view.length + this.overlayIds.length;
@@ -819,13 +841,7 @@ export class LogEngine {
     if (id === undefined) {
       return { count: total, next: total, row: -1 };
     }
-    // the ids of the session rows, committed and overlay, ascending
-    const starts = this.index.sessions.map((session) => session.id);
-    this.index.overlay.forEach((entry, at) => {
-      if (entry.session) {
-        starts.push(this.index.count + at);
-      }
-    });
+    const starts = this.sessionIds();
     let low = 0;
     let high = starts.length;
     while (low < high) {
@@ -968,5 +984,116 @@ export class LogEngine {
     } else {
       this.searchStatusSet({ matches: this.view.matchCount, progress: this.searchProgress(run), state: "waiting" });
     }
+  }
+
+  // --- what a merged view (merge.ts) reads of each of its sources
+
+  // entries the parser is done with; the ones after are overlay entries
+  get committed(): number {
+    return this.index.count;
+  }
+
+  // Entries a merge can take: the committed ones the view has taken in, and the overlay entries after
+  // them once the view has caught up. An overlay entry keeps its id when it is committed.
+  get mergeable(): number {
+    const processed = this.view.processedCount;
+    return processed === this.index.count ? this.index.total : processed;
+  }
+
+  // epoch ms of an entry, NaN when it has no date
+  timeOf(id: number): number {
+    return id < this.index.count ? this.index.times[id] : (this.index.overlay[id - this.index.count]?.time ?? Number.NaN);
+  }
+
+  kindOf(id: number): number {
+    return this.index.kindOf(id);
+  }
+
+  lengthOf(id: number): number {
+    return this.index.lengthOf(id);
+  }
+
+  // changes when rows of the view moved or changed
+  get viewVersion(): number {
+    return this.version;
+  }
+
+  // changes when only the match marks did
+  get viewFlags(): number {
+    return this.flags;
+  }
+
+  // rows of the view from committed entries; the overlay rows come after them
+  get viewLength(): number {
+    return this.view.length;
+  }
+
+  viewEntry(row: number): number {
+    return this.view.at(row);
+  }
+
+  // the first row of the view at or after an entry
+  viewRowNear(id: number): number {
+    return this.view.rowNear(id);
+  }
+
+  get overlayRows(): readonly number[] {
+    return this.overlayIds;
+  }
+
+  // search matches that pass the filters, in file order
+  get matchCount(): number {
+    return this.view.matchCount;
+  }
+
+  matchEntryAt(position: number): number | undefined {
+    return this.view.matchEntry(position);
+  }
+
+  get searchState(): SearchStatus {
+    return this.searchStatus;
+  }
+
+  stats(): StatsSnapshot {
+    return this.index.snapshot();
+  }
+
+  // the connection's status, when the source is an event server
+  liveStatus(): LiveStatus | undefined {
+    return this.feed?.status();
+  }
+
+  entriesFor(ids: number[]): Promise<(LogEntry | undefined)[]> {
+    return this.tableRows(ids);
+  }
+
+  detailOf(id: number): Promise<DetailResult | undefined> {
+    return this.detail(id);
+  }
+
+  // the text of entries for a copy, in the order given
+  async textsFor(ids: number[], mode: "raw" | "message"): Promise<string[]> {
+    const store = this.store;
+    if (!store) {
+      return ids.map(() => "");
+    }
+    return mode === "raw" ? store.rawText(ids) : this.messageTexts(store, ids);
+  }
+
+  // The view's version and serial, and carrying on from another engine's: the table tells views
+  // apart by them, so they never go back when the worker switches between this engine and a merge.
+  counters(): { version: number; serial: number } {
+    return { serial: this.serial, version: this.version };
+  }
+
+  countersFrom(other: { version: number; serial: number }) {
+    this.version = Math.max(this.version, other.version) + 1;
+    this.serial = Math.max(this.serial, other.serial);
+  }
+
+  // lets go of everything, the connection included
+  dispose() {
+    this.begin(this.id, "");
+    this.busy = false;
   }
 }

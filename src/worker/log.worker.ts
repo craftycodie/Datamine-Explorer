@@ -1,6 +1,7 @@
 import "./buffer-shim";
 import type { FileStat } from "../lib/types";
 import { type Host, LogEngine } from "./engine";
+import { MergeEngine } from "./merge";
 import { isOpfsPath } from "../lib/opfs";
 import { OpfsSpool } from "./opfs-spool";
 import type { HostCall, SpoolMode, WorkerRequest, WorkerResponse } from "./protocol";
@@ -48,34 +49,59 @@ const host: Host = {
 };
 
 const engine = new LogEngine(host, send);
+// An id no source has (-1 is the worker failing), for letting go of one engine without the main thread hearing.
+const SILENT_ID = -2;
+// several sources at once; while it has any, it answers instead of `engine`
+const merge = new MergeEngine(host, send);
+
+// One source again: the merge lets go of its own.
+function single() {
+  if (merge.active) {
+    merge.close(SILENT_ID);
+    engine.countersFrom(merge.counters());
+  }
+}
 
 onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   switch (request.type) {
     case "open":
+      single();
       void engine.open(request.id, request.path);
       break;
     case "refresh":
       void engine.refresh(request.id);
       break;
     case "connect":
+      single();
       spoolMode = request.spool;
       engine.connect(request.id, request.url, request.fresh);
+      break;
+    case "sources":
+      spoolMode = request.spool;
+      engine.close(SILENT_ID);
+      if (!merge.active) {
+        merge.countersFrom(engine.counters());
+      }
+      merge.sourcesSet(request.id, request.sources);
       break;
     case "disconnect":
       void engine.disconnect(request.id);
       break;
     case "close":
+      single();
       engine.close(request.id);
       break;
     case "filters":
       engine.filtersSet(request.filters, request.onlyMatches);
+      merge.filtersSet(request.filters, request.onlyMatches);
       break;
     case "search":
       engine.searchSet(request.spec);
+      merge.searchSet(request.spec);
       break;
     case "call":
-      engine.call(request.call).then(
+      (merge.active ? merge : engine).call(request.call).then(
         (value) => send({ req: request.req, type: "result", value }),
         (error) => send({ message: error instanceof Error ? error.message : String(error), req: request.req, type: "failed" })
       );

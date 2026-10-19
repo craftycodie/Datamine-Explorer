@@ -12,10 +12,19 @@ use files::s_file_node;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, State};
 
-// What reads are allowed: everything under a folder, or one file. Both are canonical paths.
+// What reads are allowed: everything under a folder, one file, or several files shown together.
+// All are canonical paths.
 enum Root {
     Folder(PathBuf),
     File(PathBuf),
+    Files(Vec<PathBuf>),
+}
+
+// A file or its sidecar (`<file>.json`).
+fn file_or_sidecar(file: &Path, canonical: &Path) -> bool {
+    let mut sidecar = file.as_os_str().to_owned();
+    sidecar.push(".json");
+    canonical == file || canonical.as_os_str() == sidecar
 }
 
 // The opened folder or file and its watcher. Every read is checked against it.
@@ -59,6 +68,22 @@ impl ExplorerState {
         Ok(canonical)
     }
 
+    // Opens several files to be read together. A spool stays readable: servers are among the sources.
+    fn set_files(&self, paths: &[String]) -> Result<Vec<PathBuf>, String> {
+        let mut files = Vec::with_capacity(paths.len());
+        for path in paths {
+            let canonical = Path::new(path)
+                .canonicalize()
+                .map_err(|error| format!("cannot open {path}: {error}"))?;
+            if !canonical.is_file() {
+                return Err(format!("{path} is not a file"));
+            }
+            files.push(canonical);
+        }
+        *self.root.lock().unwrap() = Some(Root::Files(files.clone()));
+        Ok(files)
+    }
+
     // Canonicalizes `path` and rejects anything outside the opened folder or file. A file's sidecar
     // (`<file>.json`) reads with it, and so does the spool folder while a spool is open.
     fn inside_root(&self, path: &str) -> Result<PathBuf, String> {
@@ -74,11 +99,8 @@ impl ExplorerState {
         let root = root.as_ref().ok_or("no folder is open")?;
         let inside = match root {
             Root::Folder(folder) => canonical.starts_with(folder),
-            Root::File(file) => {
-                let mut sidecar = file.as_os_str().to_owned();
-                sidecar.push(".json");
-                &canonical == file || canonical.as_os_str() == sidecar
-            }
+            Root::File(file) => file_or_sidecar(file, &canonical),
+            Root::Files(files) => files.iter().any(|file| file_or_sidecar(file, &canonical)),
         };
         if inside {
             Ok(canonical)
@@ -100,6 +122,12 @@ fn list_tree(root: String, state: State<ExplorerState>) -> Result<Vec<s_file_nod
 fn open_file(path: String, state: State<ExplorerState>) -> Result<s_file_node, String> {
     let file = state.set_file(&path)?;
     files::file_node(&file)
+}
+
+// Opens several files to be read together and returns their nodes, in the order given.
+#[tauri::command]
+fn open_files(paths: Vec<String>, state: State<ExplorerState>) -> Result<Vec<s_file_node>, String> {
+    state.set_files(&paths)?.iter().map(|file| files::file_node(file)).collect()
 }
 
 // What a typed path is, so the toolbar can open it as a folder or a file.
@@ -225,6 +253,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             list_tree,
             open_file,
+            open_files,
             path_kind,
             file_stat,
             read_file_range,
@@ -274,6 +303,26 @@ mod tests {
         state.set_root(dir.to_str().unwrap()).unwrap();
         assert!(state.inside_root(other.to_str().unwrap()).is_ok());
         assert!(state.set_root(wanted.to_str().unwrap()).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn several_files_read_together_and_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("dmv-root-files-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let first = dir.join("first.log");
+        let second = dir.join("second.log");
+        let other = dir.join("other.log");
+        for file in [&first, &second, &other] {
+            fs::write(file, "a").unwrap();
+        }
+        let state = ExplorerState::default();
+        let paths = [first.to_str().unwrap().to_owned(), second.to_str().unwrap().to_owned()];
+        state.set_files(&paths).unwrap();
+        assert!(state.inside_root(first.to_str().unwrap()).is_ok());
+        assert!(state.inside_root(second.to_str().unwrap()).is_ok());
+        assert!(state.inside_root(other.to_str().unwrap()).is_err());
+        assert!(state.set_files(&[dir.to_str().unwrap().to_owned()]).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 

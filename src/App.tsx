@@ -12,6 +12,8 @@ import { LogTable, type ScrollRequest } from "./components/LogTable";
 import { MENU_OPEN_EVENT } from "./components/Menu";
 import { PreReleaseWatermark } from "./components/PreReleaseWatermark";
 import { SessionPane } from "./components/SessionPane";
+import { type SourceDraft, SourcesDialog } from "./components/SourcesDialog";
+import { SourcesPane } from "./components/SourcesPane";
 import { Sized } from "./components/Sized";
 import { Toolbar } from "./components/Toolbar";
 import { UpdateDialog } from "./components/UpdateDialog";
@@ -30,7 +32,7 @@ import { useLogSession, type LogSource, type ViewState } from "./lib/session";
 import { storedGet, storedSet } from "./lib/stored";
 import { DESKTOP_BUILD } from "./lib/desktop";
 import { useUpdateCheck } from "./lib/update-hook";
-import type { DetailResult, FileNode, LogEntry, SessionInfo } from "./lib/types";
+import type { DetailResult, FileNode, LogEntry, SessionInfo, SourceSpec } from "./lib/types";
 
 // The dmv. prefix (here, in columns.ts and recent.ts, and on the pane size keys below) is from the app's
 // old name, Datamine Viewer. Kept so existing installs keep their settings.
@@ -59,6 +61,12 @@ function serverName(url: string): string {
   }
 }
 
+// One of several sources open together. `root` is what the backend opens a file by and what recent
+// keeps; `target` is the path the worker reads it at.
+interface MultiSource extends SourceSpec {
+  root: string;
+}
+
 function usePersisted<T>(key: string, initial: T, parse: (text: string) => T | undefined): [T, (value: T) => void] {
   const [value, setValue] = useState<T>(() => {
     const text = storedGet(key);
@@ -81,6 +89,9 @@ export function App() {
   const [tree, setTree] = useState<FileNode[]>([]);
   // set while an event server is the source; `nonce` makes connecting again a new source
   const [live, setLive] = useState<{ url: string; nonce: number; fresh: boolean }>();
+  // set while several files and servers are shown together; `nonce` changes with the list
+  const [multi, setMulti] = useState<{ sources: MultiSource[]; nonce: number }>();
+  const [sourcesDialog, setSourcesDialog] = useState<"open" | "add">();
   const [recents, setRecents] = useState<RecentItem[]>(recentLoad);
   const [notice, setNotice] = useState<string>();
   const [connectOpen, setConnectOpen] = useState(false);
@@ -114,11 +125,14 @@ export function App() {
   const viewChanged = useRef<(view: ViewState) => void>(() => undefined);
 
   const source = useMemo<LogSource | undefined>(() => {
+    if (multi) {
+      return { kind: "multi", nonce: multi.nonce, sources: multi.sources.map(({ key, kind, name, target }) => ({ key, kind, name, target })) };
+    }
     if (live) {
       return { fresh: live.fresh, kind: "live", nonce: live.nonce, url: live.url };
     }
     return selectedPath ? { kind: "file", path: selectedPath } : undefined;
-  }, [live, selectedPath]);
+  }, [live, multi, selectedPath]);
   const { client, data, disconnect, refresh, reload } = useLogSession(source, (view) => viewChanged.current(view));
   const rows = useRows(client);
   const columns = useColumns();
@@ -145,6 +159,8 @@ export function App() {
   const rightHiddenRef = useRef(rightHidden);
   rightHiddenRef.current = rightHidden;
   const liveNonce = useRef(0);
+  const multiNonce = useRef(0);
+  const sourceKey = useRef(0);
   const closeRef = useRef<() => Promise<void>>(async () => undefined);
   const reloadRef = useRef<() => Promise<void>>(async () => undefined);
 
@@ -186,12 +202,12 @@ export function App() {
   // Something opened fine, so it goes to the top. What a browser picked is kept as a handle; a
   // snapshot cannot be opened again, so it is not listed.
   const recentAdd = useCallback(
-    async (kind: RecentKind, target: string) => {
+    async (kind: RecentKind, target: string, nickname?: string) => {
       // what a connection spooled to the temp folder is not a recent thing unless it was saved
       if (kind !== "server" && backend.isSpoolPath(target)) {
         return;
       }
-      const item: RecentItem = { kind, target };
+      const item: RecentItem = nickname ? { kind, nickname, target } : { kind, target };
       if (kind !== "server" && !backend.isPathRoot(target)) {
         item.handle = true;
         if (!(await backend.handleSave(recentKey(item), target))) {
@@ -224,6 +240,7 @@ export function App() {
         setTree(nodes);
         setSingle(false);
         setLive(undefined);
+        setMulti(undefined);
         setFolder(root);
         setSelectedPath(undefined);
         // A folder is browsed from the tree, so bring the left pane back.
@@ -249,6 +266,7 @@ export function App() {
         setTree([node]);
         setSingle(true);
         setLive(undefined);
+        setMulti(undefined);
         setFolder(root);
         setSelectedPath(node.path);
         await backend.watch(root);
@@ -276,9 +294,33 @@ export function App() {
     storedSet(SERVER_URL_KEY, url);
     setConnectOpen(false);
     folderClear();
+    setMulti(undefined);
     setLive({ fresh, nonce: ++liveNonce.current, url });
     setFollow(true);
   }, [folderClear]);
+
+  // Shows these sources together. The backend is told of every file among them, so it reads those and
+  // nothing else; the worker carries on with the ones it has already. None left closes everything.
+  const multiSet = useCallback(
+    async (sources: MultiSource[]): Promise<string | undefined> => {
+      if (sources.length === 0) {
+        await closeRef.current();
+        return;
+      }
+      try {
+        const files = sources.filter((one) => one.kind === "file");
+        const nodes = files.length > 0 ? await backend.filesOpen(files.map((one) => one.root)) : [];
+        const paths = new Map(files.map((one, k) => [one.key, nodes[k].path]));
+        folderClear();
+        setLive(undefined);
+        setMulti({ nonce: ++multiNonce.current, sources: sources.map((one) => ({ ...one, target: paths.get(one.key) ?? one.target })) });
+        setLeftHidden(false);
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    },
+    [folderClear, setLeftHidden]
+  );
 
   const pathOpen = useCallback(
     async (path: string) => {
@@ -395,6 +437,7 @@ export function App() {
     disconnect();
     folderClear();
     setLive(undefined);
+    setMulti(undefined);
     setFollow(false);
     setFilters(filtersDefault());
     setSearch({ caseSensitive: false, regex: false, text: "" });
@@ -406,6 +449,50 @@ export function App() {
 
   closeRef.current = closeAll;
   reloadRef.current = reloadAll;
+
+  // What the sources dialog gave: a new set of sources, or more for the ones open.
+  const sourcesSubmit = useCallback(
+    async (mode: "open" | "add", drafts: SourceDraft[]) => {
+      setSourcesDialog(undefined);
+      const added: MultiSource[] = drafts.map((draft) => ({ key: `s${++sourceKey.current}`, kind: draft.kind, name: draft.name, root: draft.root, target: draft.root }));
+      const why = await multiSet(mode === "add" && multi ? [...multi.sources, ...added] : added);
+      if (why) {
+        setNotice(`Could not open the sources: ${why}`);
+        return;
+      }
+      if (mode === "open") {
+        setFollow(added.some((one) => one.kind === "server"));
+      }
+      for (const one of added) {
+        if (one.kind === "file") {
+          void recentAdd("file", one.root, one.name);
+        }
+      }
+    },
+    [multi, multiSet, recentAdd]
+  );
+
+  const sourceRemove = useCallback(
+    (key: string) => {
+      if (multi) {
+        void multiSet(multi.sources.filter((one) => one.key !== key)).then((why) => why && setNotice(`Could not open the sources: ${why}`));
+      }
+    },
+    [multi, multiSet]
+  );
+
+  // A server among the sources that gets through is a recent server, like one connected on its own.
+  const serversListed = useRef(new Set<string>());
+  const sourceStatuses = data.sources;
+  useEffect(() => {
+    for (const status of sourceStatuses ?? []) {
+      const one = multi?.sources.find((source) => source.key === status.key);
+      if (one?.kind === "server" && status.state === "live" && !serversListed.current.has(one.key)) {
+        serversListed.current.add(one.key);
+        void recentAdd("server", status.prefix ?? one.target, one.name);
+      }
+    }
+  }, [multi, recentAdd, sourceStatuses]);
 
   // Old spools in the temp folder go once, at start (the desktop app tidies them itself).
   useEffect(() => {
@@ -741,7 +828,9 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [jumpToTail, matchStep, openFileDialog, openFolderDialog, setLeftHidden, setRightHidden]);
 
-  const toolbarLabel = live
+  const toolbarLabel = multi
+    ? { kind: "sources" as const, name: multi.sources.map((one) => one.name).join(", "), title: `${multi.sources.length} sources` }
+    : live
     ? { kind: "server" as const, name: serverName(liveStatus?.prefix ?? live.url), title: liveStatus?.prefix ?? live.url }
     : folder
       ? { kind: single ? ("file" as const) : ("folder" as const), name: baseName(folder), title: folder }
@@ -760,6 +849,7 @@ export function App() {
       highlight={highlight}
       onCopy={(mode) => void copySelection(mode)}
       onFollowBreak={() => setFollow(false)}
+      onFollowResume={() => setFollow(true)}
       onSelectAll={() => void selectAll()}
       onSelectRow={rowSelect}
       rows={rows}
@@ -767,7 +857,8 @@ export function App() {
       selected={selected}
       selectedRow={selectedRow}
       selection={selection}
-      sessionKey={live ? `live ${live.nonce}` : (selectedPath ?? "")}
+      sessionKey={multi ? `multi ${multi.nonce}` : live ? `live ${live.nonce}` : (selectedPath ?? "")}
+      showSource={multi !== undefined}
       viewVersion={data.view.version}
       wrap={wrap}
     />
@@ -777,7 +868,14 @@ export function App() {
   const categoryFilter = (
     <CategoryFilter counts={data.stats.categoryCounts} filters={filters} onFilters={setFilters} version={data.statsVersion} />
   );
-  const categories = live ? (
+  const categories = multi ? (
+    <>
+      <SourcesPane onAdd={() => setSourcesDialog("add")} onRemove={sourceRemove} sources={multi.sources} statuses={sourceStatuses} />
+      <Sized axis="y" initial={260} side="start" storageKey="dmv.categories">
+        {categoryFilter}
+      </Sized>
+    </>
+  ) : live ? (
     <div className="categories-fill">{categoryFilter}</div>
   ) : (
     <>
@@ -800,7 +898,15 @@ export function App() {
   );
 
   let center: React.ReactNode;
-  if (live) {
+  if (multi) {
+    if (viewCount > 0) {
+      center = table;
+    } else if (file?.loading) {
+      center = <div className="placeholder">Reading {multi.sources.length} sources...</div>;
+    } else {
+      center = <div className="placeholder">{filtered ? "No rows pass the filters." : "No entries in these sources yet."}</div>;
+    }
+  } else if (live) {
     if (viewCount > 0) {
       center = table;
     } else if (liveStatus?.state === "closed" && liveStatus.error) {
@@ -872,7 +978,7 @@ export function App() {
         menus={
           <>
             <FileMenu
-              canClose={Boolean(folder || live)}
+              canClose={Boolean(folder || live || multi)}
               canReload={Boolean(folder && !live && backend.canReload())}
               canSaveSession={Boolean(live && liveStatus?.spoolPath)}
               connected={connected}
@@ -882,6 +988,7 @@ export function App() {
               onDisconnect={disconnect}
               onOpenFile={() => void openFileDialog()}
               onOpenFolder={() => void openFolderDialog()}
+              onOpenMultiple={() => setSourcesDialog("open")}
               onRecent={(item) => void recentOpen(item)}
               onReload={() => void reloadAll()}
               onSaveSession={() => void sessionSave()}
@@ -961,7 +1068,7 @@ export function App() {
         </Sized>
       </div>
       <div className={`statusbar${file?.error || notice ? " failed" : ""}`}>
-        <span>{live ? (liveStatus?.prefix ?? live.url) : file ? baseName(file.path) : (folder ?? "no folder")}</span>
+        <span>{multi ? `${multi.sources.length} sources` : live ? (liveStatus?.prefix ?? live.url) : file ? baseName(file.path) : (folder ?? "no folder")}</span>
         {live && <LiveBadge live={liveStatus} />}
         {file && (
           <span>
@@ -999,6 +1106,22 @@ export function App() {
         />
       )}
       {DESKTOP_BUILD && update.release && <UpdateDialog onDownload={update.download} onLater={update.later} onSkip={update.skip} release={update.release} />}
+      {sourcesDialog && (
+        <SourcesDialog
+          mode={sourcesDialog}
+          onCancel={() => setSourcesDialog(undefined)}
+          onPickFile={() => backend.pickFile({ keep: true })}
+          onRecent={async (item) => (item.handle ? (await backend.handleRestore(recentKey(item), { keep: true }))?.root : item.target)}
+          onSubmit={(drafts) => void sourcesSubmit(sourcesDialog, drafts)}
+          recents={recents}
+          serverDefault={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}
+          taken={
+            sourcesDialog === "add" && multi
+              ? { names: multi.sources.map((one) => one.name), targets: multi.sources.map((one) => one.root) }
+              : { names: [], targets: [] }
+          }
+        />
+      )}
       {connectOpen && (
         <ConnectDialog
           initial={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}
