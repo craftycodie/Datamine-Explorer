@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { backend } from "../lib/backend";
 import { recentLabel, recentTitle, type RecentItem, type RecentKind } from "../lib/recent";
 import { useT } from "../localization";
 import { Menu, type MenuEntry } from "./Menu";
@@ -16,6 +17,14 @@ export function KindIcon({ kind }: { kind: IconKind }) {
       {kind === "file" && <path d="M3.5 1.5h5.5l3.5 3.5v9.5h-9z M9 1.5v3.5h3.5" {...common} />}
       {kind === "folder" && <path d="M1.5 3.5h4l1.5 1.5h7.5v8h-13z" {...common} />}
       {kind === "sources" && <path d="M5.5 1.5h5l2.5 2.5v7.5h-7.5z M3 4v10.5h7.5" {...common} />}
+      {kind === "console" && (
+        // an Xbox 360 standing up: the tower with its pinched sides, the ring of light and the disc slot
+        <>
+          <path d="M4.3 1.5h7.4q-1.2 6.5 0 13h-7.4q1.2-6.5 0-13z" {...common} />
+          <circle cx="8" cy="4.2" r="1.25" {...common} />
+          <path d="M6.6 7v5.6" {...common} />
+        </>
+      )}
       {kind === "server" && (
         <>
           <circle cx="8" cy="8" r="6.2" {...common} />
@@ -35,6 +44,7 @@ export function FileMenu({
   onClearRecent,
   onClose,
   onConnect,
+  onConnectXbox,
   onDisconnect,
   onOpenFile,
   onOpenFolder,
@@ -52,6 +62,7 @@ export function FileMenu({
   onClearRecent: () => void;
   onClose: () => void;
   onConnect: () => void;
+  onConnectXbox: () => void;
   onDisconnect: () => void;
   onOpenFile: () => void;
   onOpenFolder: () => void;
@@ -68,6 +79,19 @@ export function FileMenu({
       { action: { hint: "Ctrl+O", icon: <KindIcon kind="file" />, id: "file", label: t("file_open_file"), run: onOpenFile }, kind: "action" },
       { action: { hint: "Ctrl+Shift+O", icon: <KindIcon kind="folder" />, id: "folder", label: t("file_open_folder"), run: onOpenFolder }, kind: "action" },
       { action: { hint: "Ctrl+K", icon: <KindIcon kind="server" />, id: "connect", label: t("file_connect"), run: onConnect }, kind: "action" },
+      {
+        action: {
+          // the console's debug connection is a raw socket, which only the desktop app can open
+          disabled: backend.kind !== "tauri",
+          hint: "Ctrl+Shift+K",
+          icon: <KindIcon kind="console" />,
+          id: "connect-xbox",
+          label: t("file_connect_xbox"),
+          run: onConnectXbox,
+          title: backend.kind === "tauri" ? undefined : t("xbox_desktop_only"),
+        },
+        kind: "action",
+      },
       { action: { icon: <KindIcon kind="sources" />, id: "multiple", label: t("file_open_multiple"), run: onOpenMultiple }, kind: "action" },
     ];
     if (canSaveSession) {
@@ -98,7 +122,7 @@ export function FileMenu({
       list.push({ id: "clear-separator", kind: "separator" }, { action: { id: "clear", label: t("file_clear_recent"), run: onClearRecent }, kind: "action" });
     }
     return list;
-  }, [canClose, canReload, canSaveSession, connected, onClearRecent, onClose, onConnect, onDisconnect, onOpenFile, onOpenFolder, onOpenMultiple, onRecent, onRecentRemove, onReload, onSaveSession, recents, t]);
+  }, [canClose, canReload, canSaveSession, connected, onClearRecent, onClose, onConnect, onConnectXbox, onDisconnect, onOpenFile, onOpenFolder, onOpenMultiple, onRecent, onRecentRemove, onReload, onSaveSession, recents, t]);
 
   return <Menu entries={entries} id="file" label={t("file_menu")} />;
 }

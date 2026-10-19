@@ -38,12 +38,20 @@ function cellText(id: ColumnId, entry: LogEntry): string {
     case "index":
       return String(entry.eventIndex ?? entry.ordinal);
     case "level":
-      return LEVEL_SHORT[entry.level] ?? (entry.levelText || "?").slice(0, 4).toUpperCase();
+      return levelShort(entry);
     case "category":
       return entry.category;
     case "source":
       return entry.source ?? "";
   }
+}
+
+// The level badge's text; an entry written with no level (a console's debug output) shows a dash.
+function levelShort(entry: LogEntry): string {
+  if (LEVEL_SHORT[entry.level]) {
+    return LEVEL_SHORT[entry.level];
+  }
+  return entry.levelText.toLowerCase() === "none" ? "–" : (entry.levelText || "?").slice(0, 4).toUpperCase();
 }
 
 // What a row shows as its message when it is not wrapped: one line, whole (a message cut short by the
@@ -600,7 +608,7 @@ export function LogTable({
         {columns.shown("index") && <span className="cell-index">{entry.eventIndex ?? entry.ordinal}</span>}
         <span>
           <span className={`badge level-${entry.level}`} title={entry.level >= 0 ? t(`level_${LEVEL_NAMES[entry.level]}`) : entry.levelText}>
-            {LEVEL_SHORT[entry.level] ?? (entry.levelText || "?").slice(0, 4).toUpperCase()}
+            {levelShort(entry)}
           </span>
         </span>
         <span className="cell-category" title={entry.category}>

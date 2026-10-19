@@ -5,6 +5,7 @@
 // A "root" is what listTree or fileInfo take: a path, or the name of something picked in a browser.
 import { translate } from "../localization";
 import type { HostCall } from "../worker/protocol";
+import type { XbdmEvent } from "../worker/xbdm-connection";
 import { baseName, pathKey } from "./format";
 import { isOpfsPath, liveDirectory, opfsName } from "./opfs";
 import { savedName, spoolCleanupPlan, type SpoolGroup } from "./spool";
@@ -64,7 +65,16 @@ export interface Backend {
   spoolCleanup(): Promise<void>;
   // Whether `path` is in the spool folder, which recents leave out.
   isSpoolPath(path: string): boolean;
+  // Opens or closes a link to an Xbox 360's debug monitor (desktop only; a browser cannot open the socket).
+  xbdmCall(call: Extract<HostCall, { kind: "xbdmOpen" | "xbdmClose" }>): Promise<void>;
+  // What the links say, as it arrives.
+  onXbdm(callback: (event: XbdmEvent) => void): Promise<() => void>;
+  // Lets go of the links a page before this one left open.
+  xbdmCloseAll(): Promise<void>;
 }
+
+// the desktop app's events for its links to Xbox 360s (XBDM_EVENT in xbdm.rs)
+const XBDM_EVENT = "datamine-explorer://xbdm";
 
 // "datamine-viewer" is the spool folder's name from the app's old name (see spool_dir in spool.rs).
 export function spoolPathHas(path: string): boolean {
@@ -103,6 +113,18 @@ function tauriBackend(): Backend {
     async onChanged(callback) {
       const { listen } = await import("@tauri-apps/api/event");
       return listen<ChangeEvent>(CHANGED_EVENT, (event) => callback(event.payload));
+    },
+    async onXbdm(callback) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<XbdmEvent>(XBDM_EVENT, (event) => callback(event.payload));
+    },
+    async xbdmCloseAll() {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("xbdm_close_all");
+    },
+    async xbdmCall(call) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await (call.kind === "xbdmOpen" ? invoke("xbdm_open", { host: call.host, link: call.link }) : invoke("xbdm_close", { link: call.link }));
     },
     async pathKind(path) {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -674,6 +696,11 @@ function browserBackend(): Backend {
     async onChanged(callback) {
       listeners.add(callback);
       return () => listeners.delete(callback);
+    },
+    onXbdm: async () => () => undefined,
+    xbdmCloseAll: async () => undefined,
+    async xbdmCall() {
+      throw new Error(translate("xbox_desktop_only"));
     },
     async pathKind(path) {
       return (await api<{ kind: "file" | "folder" | "missing" }>("kind", { path })).kind;

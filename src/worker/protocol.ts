@@ -1,5 +1,6 @@
 import type { Filters, SearchSpec } from "../lib/filter";
 import type { IdRange } from "../lib/selection";
+import type { XbdmEvent } from "./xbdm-connection";
 import type { DetailResult, FileStat, LiveStatus, LogEntry, SearchStatus, SessionMeta, SourceSpec, SourceStatus, StatsSnapshot } from "../lib/types";
 
 // Questions the main thread asks about the open file; each is answered with a "result".
@@ -81,10 +82,14 @@ export type WorkerRequest =
   // nothing is open any more: drop whatever is held
   | { type: "close"; id: number }
   | { type: "filters"; filters: Filters; onlyMatches: boolean }
+  // which of several sources are shown, by key: only `include` when it has any, never `exclude`
+  | { type: "sourceFilter"; include: string[]; exclude: string[] }
   // undefined clears the search
   | { type: "search"; spec?: SearchSpec }
   | { type: "call"; req: number; call: CallRequest }
-  | { type: "hostResult"; callId: number; bytes?: ArrayBuffer; stat?: FileStat; text?: string; error?: string };
+  | { type: "hostResult"; callId: number; bytes?: ArrayBuffer; stat?: FileStat; text?: string; error?: string }
+  // what the desktop app says of a link to an Xbox 360 (see xbdm-connection.ts)
+  | { type: "xbdm"; event: XbdmEvent };
 
 export type SpoolMode = "tauri" | "opfs";
 
@@ -96,7 +101,9 @@ export type HostCall =
   | { kind: "spoolFind"; prefix: string }
   | { kind: "spoolResume"; path: string }
   | { kind: "spoolAppend"; path: string; bytes: ArrayBuffer }
-  | { kind: "spoolFinish"; path: string };
+  | { kind: "spoolFinish"; path: string }
+  | { kind: "xbdmOpen"; link: number; host: string }
+  | { kind: "xbdmClose"; link: number };
 
 export type WorkerResponse =
   | { type: "host"; callId: number; call: HostCall }

@@ -105,6 +105,23 @@ describe("merging sources", () => {
     expect(copy.text).toBe("g0\ns1 boom\ng2 boom\ns3");
   });
 
+  it("shows only some sources, or all but some", async () => {
+    const files = new Map([
+      ["game.txt", line(0, 0, "ai: g0") + line(2, 1, "ai: g2")],
+      ["server.txt", line(1, 0, "ai: s1") + line(3, 1, "ai: s3")],
+    ]);
+    const { engine, rows } = await mergeOver(files, specs);
+    engine.sourceFilterSet(["b"], []);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(messages(await rows())).toEqual(["server s1", "server s3"]);
+    engine.sourceFilterSet([], ["b"]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(messages(await rows())).toEqual(["game g0", "game g2"]);
+    engine.sourceFilterSet([], []);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(messages(await rows())).toEqual(["game g0", "server s1", "game g2", "server s3"]);
+  });
+
   it("shows a selected entry's neighbours from its own source, by merged id", async () => {
     const files = new Map([
       ["game.txt", line(0, 0, "ai: g0") + line(2, 1, "ai: g2")],

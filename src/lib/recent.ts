@@ -4,7 +4,8 @@ import { translate } from "../localization";
 import { baseName, pathKey } from "./format";
 import { storedGet, storedSet } from "./stored";
 
-export type RecentKind = "file" | "folder" | "server";
+// a console is an Xbox 360's debug output, its target an xbdm:// address
+export type RecentKind = "file" | "folder" | "server" | "console";
 
 export interface RecentItem {
   kind: RecentKind;
@@ -25,10 +26,13 @@ export function recentKey(item: RecentItem): string {
 }
 
 function same(a: RecentItem, b: RecentItem): boolean {
-  return a.kind === b.kind && (a.kind === "server" ? a.target === b.target : pathKey(a.target) === pathKey(b.target));
+  return a.kind === b.kind && (a.kind === "server" || a.kind === "console" ? a.target === b.target : pathKey(a.target) === pathKey(b.target));
 }
 
 export function recentLabel(item: RecentItem): string {
+  if (item.kind === "console") {
+    return item.target.replace(/^xbdm:\/\//i, "").replace(/:730$/, "");
+  }
   return item.kind === "server" ? item.target.replace(/^https?:\/\//, "") : baseName(item.target);
 }
 
@@ -43,7 +47,7 @@ function valid(value: unknown): value is RecentItem {
   return (
     typeof item === "object" &&
     item !== null &&
-    (item.kind === "file" || item.kind === "folder" || item.kind === "server") &&
+    (item.kind === "file" || item.kind === "folder" || item.kind === "server" || item.kind === "console") &&
     typeof item.target === "string" &&
     item.target !== "" &&
     (item.nickname === undefined || typeof item.nickname === "string")

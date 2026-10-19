@@ -118,6 +118,10 @@ export class MergeEngine {
   private search: SearchSpec | undefined;
   private lastSources = "";
   private lastMeta = "";
+  private sourceInclude = new Set<string>();
+  private sourceExclude = new Set<string>();
+  // the source filter changed: the rows are built again
+  private viewStale = false;
   private doneSent = false;
 
   constructor(
@@ -216,6 +220,19 @@ export class MergeEngine {
     this.viewDone = 0;
     this.volatileFrom = 0;
     this.matchCache = undefined;
+  }
+
+  // Which sources are shown, by key, like the category filters: some only, or all but some.
+  sourceFilterSet(include: string[], exclude: string[]) {
+    this.sourceInclude = new Set(include);
+    this.sourceExclude = new Set(exclude);
+    this.viewStale = true;
+    this.soon();
+  }
+
+  private sourceShown(member: Member): boolean {
+    const key = member.spec.key;
+    return (this.sourceInclude.size === 0 || this.sourceInclude.has(key)) && !this.sourceExclude.has(key);
   }
 
   filtersSet(filters: Filters, onlyMatches: boolean) {
@@ -330,7 +347,8 @@ export class MergeEngine {
     } else {
       this.append();
     }
-    const changed = reordered || this.members.some((member) => member.engine.viewVersion !== member.seenVersion);
+    const changed = reordered || this.viewStale || this.members.some((member) => member.engine.viewVersion !== member.seenVersion);
+    this.viewStale = false;
     this.viewBuild(changed);
     this.emitAll(changed);
   }
@@ -447,8 +465,12 @@ export class MergeEngine {
     }
     const orderMember = this.orderMember;
     const orderLocal = this.orderLocal.data;
+    const shown = members.map((member) => this.sourceShown(member));
     for (let id = from; id < this.orderCount; id++) {
       const index = orderMember[id];
+      if (!shown[index]) {
+        continue;
+      }
       const member = members[index];
       const local = orderLocal[id];
       const engine = member.engine;
@@ -616,6 +638,9 @@ export class MergeEngine {
     }
     const ids: number[] = [];
     this.members.forEach((member, index) => {
+      if (!this.sourceShown(member)) {
+        return;
+      }
       for (let position = 0; position < member.engine.matchCount; position++) {
         const local = member.engine.matchEntryAt(position) as number;
         const id = this.mergedOf(index, local);

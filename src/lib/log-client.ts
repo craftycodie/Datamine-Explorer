@@ -11,8 +11,21 @@ export class LogClient {
   private nextReq = 0;
   private waiting = new Map<number, { resolve: (value: never) => void; reject: (error: Error) => void }>();
 
+  private xbdmOff: (() => void) | undefined;
+  private closed = false;
+  // the console links the worker has open, closed with it
+  private xbdmLinks = new Set<number>();
+
   constructor(private onMessage: (message: WorkerResponse) => void) {
     this.worker = new Worker(new URL("../worker/log.worker.ts", import.meta.url), { type: "module" });
+    // an Xbox 360's debug output reaches the worker through here
+    void backend.onXbdm((event) => this.post({ event, type: "xbdm" })).then((off) => {
+      if (this.closed) {
+        off();
+      } else {
+        this.xbdmOff = off;
+      }
+    });
     this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => this.receive(event.data);
     this.worker.onerror = (event) => {
       this.onMessage({ id: -1, message: translate("worker_failed", { error: event.message }), type: "error" });
@@ -46,6 +59,16 @@ export class LogClient {
     try {
       if (call.kind === "stat") {
         this.post({ callId, stat: await backend.stat(call.path), type: "hostResult" });
+        return;
+      }
+      if (call.kind === "xbdmOpen" || call.kind === "xbdmClose") {
+        if (call.kind === "xbdmOpen") {
+          this.xbdmLinks.add(call.link);
+        } else {
+          this.xbdmLinks.delete(call.link);
+        }
+        await backend.xbdmCall(call);
+        this.post({ callId, type: "hostResult" });
         return;
       }
       if (call.kind !== "read") {
@@ -89,6 +112,10 @@ export class LogClient {
     this.post({ filters, onlyMatches, type: "filters" });
   }
 
+  sourceFilter(include: string[], exclude: string[]) {
+    this.post({ exclude, include, type: "sourceFilter" });
+  }
+
   search(spec: SearchSpec | undefined) {
     this.post({ spec, type: "search" });
   }
@@ -102,6 +129,12 @@ export class LogClient {
   }
 
   terminate() {
+    this.closed = true;
+    this.xbdmOff?.();
+    for (const link of this.xbdmLinks) {
+      void backend.xbdmCall({ kind: "xbdmClose", link }).catch(() => undefined);
+    }
+    this.xbdmLinks.clear();
     this.worker.terminate();
     for (const pending of this.waiting.values()) {
       pending.reject(new Error("closed"));

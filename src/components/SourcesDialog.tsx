@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { baseName } from "../lib/format";
 import { recentLabel, type RecentItem } from "../lib/recent";
+import { backend } from "../lib/backend";
+import { xbdmUrl } from "../lib/xbdm";
 import { useT } from "../localization";
 import { KindIcon } from "./FileMenu";
 import { RecentList } from "./RecentList";
@@ -12,18 +14,24 @@ export interface SourceDraft {
   root: string;
 }
 
+// what a row of the dialog is; a console is shown with the others as the server it is to the worker
+type RowKind = "file" | "server" | "console";
+
 interface Row {
   id: number;
-  kind: "file" | "server";
-  // a picked or recent file's root, or the server URL as typed
+  kind: RowKind;
+  // a picked or recent file's root, the server URL or the console address as typed
   target: string;
   name: string;
   // the name was made up from the target, so a new target may replace it
   named: boolean;
 }
 
-// A nickname for a source from what it is: a file's name without its extension, a server's host.
-export function nicknameOf(kind: "file" | "server", target: string): string {
+// A nickname for a source from what it is: a file's name without its extension, a server's or console's host.
+export function nicknameOf(kind: RowKind, target: string): string {
+  if (kind === "console") {
+    return target.replace(/^xbdm:\/\//i, "").split(":")[0];
+  }
   if (kind === "server") {
     try {
       return new URL(target).hostname || target;
@@ -38,7 +46,15 @@ export function nicknameOf(kind: "file" | "server", target: string): string {
 
 let nextRow = 0;
 
-function rowEmpty(kind: "file" | "server" = "file"): Row {
+// What a row is kept and compared as: a console by its xbdm:// address.
+function rowTarget(row: Row): string {
+  const target = row.target.trim();
+  return row.kind === "console" && target ? xbdmUrl(target) : target;
+}
+
+const DESKTOP = backend.kind === "tauri";
+
+function rowEmpty(kind: RowKind = "file"): Row {
   return { id: ++nextRow, kind, name: "", named: true, target: "" };
 }
 
@@ -52,6 +68,7 @@ export function SourcesDialog({
   onRecentRemove,
   onSubmit,
   recents,
+  consoleDefault,
   serverDefault,
   taken,
 }: {
@@ -64,6 +81,8 @@ export function SourcesDialog({
   onRecentRemove: (item: RecentItem) => void;
   onSubmit: (sources: SourceDraft[]) => void;
   recents: RecentItem[];
+  // the last console and server connected to, for a new row of that kind
+  consoleDefault: string;
   serverDefault: string;
   // nicknames and targets of the sources open already
   taken: { names: string[]; targets: string[] };
@@ -103,8 +122,8 @@ export function SourcesDialog({
 
   // A recent file or server goes in the first row that has nothing yet, or a new one.
   const recentUse = async (item: RecentItem) => {
-    const kind = item.kind === "server" ? "server" : "file";
-    const target = kind === "server" ? item.target : await onRecent(item);
+    const kind: RowKind = item.kind === "server" || item.kind === "console" ? item.kind : "file";
+    const target = kind === "server" ? item.target : kind === "console" ? recentLabel(item) : await onRecent(item);
     if (!target) {
       setError(t("sources_dialog_recent_failed", { name: recentLabel(item) }));
       return;
@@ -126,9 +145,10 @@ export function SourcesDialog({
     const targets = new Set(taken.targets);
     for (const [k, row] of rows.entries()) {
       const which = rows.length > 1 ? t("sources_dialog_which", { number: k + 1 }) : t("sources_dialog_which_one");
-      const target = row.target.trim();
+      const target = rowTarget(row);
       if (!target) {
-        return t(row.kind === "file" ? "sources_dialog_needs_file" : "sources_dialog_needs_server", { which });
+        const needs = { console: "sources_dialog_needs_console", file: "sources_dialog_needs_file", server: "sources_dialog_needs_server" } as const;
+        return t(needs[row.kind], { which });
       }
       const name = row.name.trim();
       if (!name) {
@@ -151,10 +171,10 @@ export function SourcesDialog({
       setError(why);
       return;
     }
-    onSubmit(rows.map((row) => ({ kind: row.kind, name: row.name.trim(), root: row.target.trim() })));
+    onSubmit(rows.map((row) => ({ kind: row.kind === "file" ? "file" : "server", name: row.name.trim(), root: rowTarget(row) })));
   };
 
-  const usable = recents.filter((item) => item.kind !== "folder");
+  const usable = recents.filter((item) => item.kind !== "folder" && (item.kind !== "console" || DESKTOP));
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div
@@ -179,13 +199,15 @@ export function SourcesDialog({
           {rows.map((row, k) => (
             <div className="source-row" key={row.id}>
               <div className="source-kind" role="group">
-                {(["file", "server"] as const).map((kind) => (
+                {(["file", "server", "console"] as const).map((kind) => (
                   <button
                     aria-pressed={row.kind === kind}
                     className={row.kind === kind ? "active" : undefined}
+                    // a console's debug connection needs the desktop app
+                    disabled={kind === "console" && !DESKTOP}
                     key={kind}
-                    onClick={() => row.kind !== kind && change(row.id, { kind, target: kind === "server" ? serverDefault : "" })}
-                    title={t(kind === "file" ? "sources_dialog_kind_file" : "sources_dialog_kind_server")}
+                    onClick={() => row.kind !== kind && change(row.id, { kind, target: kind === "server" ? serverDefault : kind === "console" ? consoleDefault : "" })}
+                    title={kind === "console" && !DESKTOP ? t("xbox_desktop_only") : t(`sources_dialog_kind_${kind}`)}
                     type="button"
                   >
                     <KindIcon kind={kind} />
@@ -202,15 +224,15 @@ export function SourcesDialog({
                 value={row.name}
               />
               {row.kind === "file" ? (
-                <button className="source-target" onClick={() => void pick(row.id)} title={row.target || "Choose a file"} type="button">
+                <button className="source-target" onClick={() => void pick(row.id)} title={row.target || t("sources_dialog_choose")} type="button">
                   {row.target ? baseName(row.target) : t("sources_dialog_choose")}
                 </button>
               ) : (
                 <input
-                  aria-label={t("sources_dialog_url_aria", { number: k + 1 })}
+                  aria-label={t(row.kind === "console" ? "sources_dialog_console_aria" : "sources_dialog_url_aria", { number: k + 1 })}
                   className="source-target"
                   onChange={(e) => change(row.id, { target: e.target.value })}
-                  placeholder={serverDefault}
+                  placeholder={row.kind === "console" ? "192.168.1.100" : serverDefault}
                   spellCheck={false}
                   value={row.target}
                 />

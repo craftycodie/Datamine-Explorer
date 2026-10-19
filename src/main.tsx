@@ -2,6 +2,7 @@ import "./styles.css";
 import { StrictMode, useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { backend } from "./lib/backend";
 import { storedGet, storedSet } from "./lib/stored";
 import { type ExplorerLocale, LocaleProvider, localeNormalize } from "./localization";
 
@@ -24,6 +25,9 @@ function Root() {
 
 // No webview menu (Back/Refresh/Inspect); text in inputs and the log stays selectable.
 window.addEventListener("contextmenu", (e) => e.preventDefault(), { capture: true });
+
+// console links a page before this one left open (a reload) belong to nobody now
+void backend.xbdmCloseAll().catch(() => undefined);
 
 const root = document.getElementById("root");
 if (root) {

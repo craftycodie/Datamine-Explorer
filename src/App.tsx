@@ -14,7 +14,7 @@ import { PreReleaseWatermark } from "./components/PreReleaseWatermark";
 import { SessionPane } from "./components/SessionPane";
 import { type SourceDraft, SourcesDialog } from "./components/SourcesDialog";
 import { RecentList } from "./components/RecentList";
-import { SourcesPane } from "./components/SourcesPane";
+import { type SourceFilter, type SourceMode, SourcesPane } from "./components/SourcesPane";
 import { Sized } from "./components/Sized";
 import { Toolbar } from "./components/Toolbar";
 import { UpdateDialog } from "./components/UpdateDialog";
@@ -31,6 +31,7 @@ import { useRows } from "./lib/rows";
 import { SELECTION_EMPTY, selectionAll, selectionClick, selectionCollapse, selectionSingle, type SelectModifiers } from "./lib/selection";
 import { useLogSession, type LogSource, type ViewState } from "./lib/session";
 import { textOf, translate, translateCount, useT } from "./localization";
+import { isXbdmUrl, xbdmUrl } from "./lib/xbdm";
 import { storedGet, storedSet } from "./lib/stored";
 import { DESKTOP_BUILD } from "./lib/desktop";
 import { useUpdateCheck } from "./lib/update-hook";
@@ -40,6 +41,8 @@ import type { DetailResult, FileNode, LogEntry, SessionInfo, SourceSpec } from "
 // old name, Datamine Viewer. Kept so existing installs keep their settings.
 const SERVER_URL_KEY = "dmv.serverUrl";
 const SERVER_URL_DEFAULT = "http://127.0.0.1:32557";
+// the address of the last Xbox 360 connected to
+const CONSOLE_ADDRESS_KEY = "dmv.consoleAddress";
 const NOTICE_MS = 7000;
 const SHOW_ALL_KEY = "dmv.showAll";
 const THEME_KEY = "dmv.theme";
@@ -52,8 +55,11 @@ const SEARCH_DELAY_MS = 250;
 const COPY_LIMIT_BYTES = 50 * 1024 * 1024;
 const COPIED_MS = 2500;
 
-// `host:port` of a server, with its path only when it is not the usual /datamine.
+// `host:port` of a server, with its path only when it is not the usual /datamine; an Xbox 360 by its address.
 function serverName(url: string): string {
+  if (isXbdmUrl(url)) {
+    return url.replace(/^xbdm:\/\//i, "").replace(/:730$/, "");
+  }
   try {
     const { host, pathname } = new URL(url);
     const path = pathname.replace(/\/+$/, "");
@@ -97,7 +103,8 @@ export function App() {
   const [sourcesDialog, setSourcesDialog] = useState<"open" | "add">();
   const [recents, setRecents] = useState<RecentItem[]>(recentLoad);
   const [notice, setNotice] = useState<string>();
-  const [connectOpen, setConnectOpen] = useState(false);
+  // the connect dialog that is open, for a server or an Xbox 360
+  const [connectOpen, setConnectOpen] = useState<"server" | "console">();
   const [aboutOpen, setAboutOpen] = useState(false);
   const update = useUpdateCheck();
   const [folderError, setFolderError] = useState<string>();
@@ -207,11 +214,11 @@ export function App() {
   const recentAdd = useCallback(
     async (kind: RecentKind, target: string, nickname?: string) => {
       // what a connection spooled to the temp folder is not a recent thing unless it was saved
-      if (kind !== "server" && backend.isSpoolPath(target)) {
+      if ((kind === "file" || kind === "folder") && backend.isSpoolPath(target)) {
         return;
       }
       const item: RecentItem = nickname ? { kind, nickname, target } : { kind, target };
-      if (kind !== "server" && !backend.isPathRoot(target)) {
+      if ((kind === "file" || kind === "folder") && !backend.isPathRoot(target)) {
         item.handle = true;
         if (!(await backend.handleSave(recentKey(item), target))) {
           return;
@@ -304,8 +311,12 @@ export function App() {
   }, []);
 
   const liveConnect = useCallback((url: string, fresh = false) => {
-    storedSet(SERVER_URL_KEY, url);
-    setConnectOpen(false);
+    if (isXbdmUrl(url)) {
+      storedSet(CONSOLE_ADDRESS_KEY, serverName(url));
+    } else {
+      storedSet(SERVER_URL_KEY, url);
+    }
+    setConnectOpen(undefined);
     folderClear();
     setMulti(undefined);
     setLive({ fresh, nonce: ++liveNonce.current, url });
@@ -359,7 +370,7 @@ export function App() {
 
   const recentOpen = useCallback(
     async (item: RecentItem) => {
-      if (item.kind === "server") {
+      if (item.kind === "server" || item.kind === "console") {
         // a failure to connect is noticed when the connection reports it
         liveConnect(item.target);
         return;
@@ -386,8 +397,7 @@ export function App() {
     recentsSet([]);
   }, [recentForget, recentsSet]);
 
-  // A connection that gets through is a recent server. One that never does is not, and drops its
-  // recent entry if it had one.
+  // A connection that gets through is a recent server or console. One that never does is not added.
   const handledNonce = useRef(0);
   const liveStatus = data.live;
   useEffect(() => {
@@ -397,17 +407,11 @@ export function App() {
     if (liveStatus.state === "live") {
       handledNonce.current = live.nonce;
       // by the server's own prefix, so every way of typing its address is one entry
-      void recentAdd("server", liveStatus.prefix ?? live.url);
-    } else if (liveStatus.state === "closed" && liveStatus.error) {
-      handledNonce.current = live.nonce;
-      const known = recentsRef.current.find((item) => item.kind === "server" && item.target === live.url);
-      if (known) {
-        recentDrop(known, textOf(liveStatus.error));
-      } else {
-        setNotice(translate("notice_connect_failed", { error: textOf(liveStatus.error), url: live.url }));
-      }
+      void recentAdd(isXbdmUrl(live.url) ? "console" : "server", liveStatus.prefix ?? live.url);
     }
-  }, [live, liveStatus, recentAdd, recentDrop]);
+    // One that cannot be reached stays in the recent list, and its error shows in place of the rows: it
+    // is likely just off (a console reboots with every title), unlike a file that is gone.
+  }, [live, liveStatus, recentAdd]);
 
   // Copies the spool of the live session where the user says. A session that has ended opens as
   // the saved file; one still going keeps going and only has what is written so
@@ -485,6 +489,33 @@ export function App() {
     [multi, multiSet, recentAdd]
   );
 
+  // Shows only a source, or hides it, as the + and - of a category do; the same button again undoes it.
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>({ exclude: [], include: [] });
+  const sourceMode = useCallback((key: string, mode: SourceMode) => {
+    setSourceFilter((before) => {
+      const current = before.include.includes(key) ? "include" : before.exclude.includes(key) ? "exclude" : undefined;
+      const include = before.include.filter((other) => other !== key);
+      const exclude = before.exclude.filter((other) => other !== key);
+      if (current !== mode) {
+        (mode === "include" ? include : exclude).push(key);
+      }
+      return { exclude, include };
+    });
+  }, []);
+  // the filter only names sources that are open
+  const sourceKeys = multi?.sources.map((one) => one.key).join(" ") ?? "";
+  useEffect(() => {
+    const open = new Set(sourceKeys.split(" "));
+    setSourceFilter((before) =>
+      before.include.every((key) => open.has(key)) && before.exclude.every((key) => open.has(key))
+        ? before
+        : { exclude: before.exclude.filter((key) => open.has(key)), include: before.include.filter((key) => open.has(key)) }
+    );
+  }, [sourceKeys]);
+  useEffect(() => {
+    client?.sourceFilter(sourceFilter.include, sourceFilter.exclude);
+  }, [client, sourceFilter]);
+
   const sourceRemove = useCallback(
     (key: string) => {
       if (multi) {
@@ -502,7 +533,7 @@ export function App() {
       const one = multi?.sources.find((source) => source.key === status.key);
       if (one?.kind === "server" && status.state === "live" && !serversListed.current.has(one.key)) {
         serversListed.current.add(one.key);
-        void recentAdd("server", status.prefix ?? one.target, one.name);
+        void recentAdd(isXbdmUrl(one.target) ? "console" : "server", status.prefix ?? one.target, one.name);
       }
     }
   }, [multi, recentAdd, sourceStatuses]);
@@ -598,12 +629,14 @@ export function App() {
   }, [client, matcher, deferredSearch]);
 
   // a new file or connection starts clean
+  const rowsClear = rows.clear;
   useEffect(() => {
+    rowsClear();
     setSelection(SELECTION_EMPTY);
     setSelectedRow(-1);
     setDetail(undefined);
     setMatchPosition(0);
-  }, [source]);
+  }, [rowsClear, source]);
 
   // the detail pane follows the selected entry
   const loading = data.file?.loading;
@@ -824,7 +857,11 @@ export function App() {
         void closeRef.current();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setConnectOpen(true);
+        if (!e.shiftKey) {
+          setConnectOpen("server");
+        } else if (backend.kind === "tauri") {
+          setConnectOpen("console");
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         searchRef.current?.focus();
@@ -844,7 +881,7 @@ export function App() {
   const toolbarLabel = multi
     ? { kind: "sources" as const, name: multi.sources.map((one) => one.name).join(", "), title: translateCount("format_sources", multi.sources.length) }
     : live
-    ? { kind: "server" as const, name: serverName(liveStatus?.prefix ?? live.url), title: liveStatus?.prefix ?? live.url }
+    ? { kind: isXbdmUrl(live.url) ? ("console" as const) : ("server" as const), name: serverName(liveStatus?.prefix ?? live.url), title: liveStatus?.prefix ?? live.url }
     : folder
       ? { kind: single ? ("file" as const) : ("folder" as const), name: baseName(folder), title: folder }
       : undefined;
@@ -881,32 +918,41 @@ export function App() {
   const categoryFilter = (
     <CategoryFilter counts={data.stats.categoryCounts} filters={filters} onFilters={setFilters} version={data.statsVersion} />
   );
+  // The sources or the files on top, as tall as they need to be until the divider is dragged; the
+  // categories take the rest.
   const categories = multi ? (
     <>
-      <SourcesPane onAdd={() => setSourcesDialog("add")} onRemove={sourceRemove} sources={multi.sources} statuses={sourceStatuses} />
-      <Sized axis="y" initial={260} side="start" storageKey="dmv.categories">
-        {categoryFilter}
+      <Sized axis="y" initial="fit" side="end" storageKey="dmv.sourcesHeight">
+        <SourcesPane
+          filter={sourceFilter}
+          onAdd={() => setSourcesDialog("add")}
+          onMode={sourceMode}
+          onRemove={sourceRemove}
+          sources={multi.sources}
+          statuses={sourceStatuses}
+        />
       </Sized>
+      <div className="categories-fill">{categoryFilter}</div>
     </>
   ) : live ? (
     <div className="categories-fill">{categoryFilter}</div>
   ) : (
     <>
-      <FileTree
-        onSelect={(path) => {
-          setLive(undefined);
-          setSelectedPath(path);
-        }}
-        onShowAll={setShowAll}
-        root={folder}
-        selected={selectedPath}
-        showAll={showAll}
-        single={single}
-        tree={tree}
-      />
-      <Sized axis="y" initial={260} side="start" storageKey="dmv.categories">
-        {categoryFilter}
+      <Sized axis="y" initial="fit" side="end" storageKey="dmv.filesHeight">
+        <FileTree
+          onSelect={(path) => {
+            setLive(undefined);
+            setSelectedPath(path);
+          }}
+          onShowAll={setShowAll}
+          root={folder}
+          selected={selectedPath}
+          showAll={showAll}
+          single={single}
+          tree={tree}
+        />
       </Sized>
+      <div className="categories-fill">{categoryFilter}</div>
     </>
   );
 
@@ -945,9 +991,17 @@ export function App() {
           <button onClick={() => void openFileDialog()} type="button">
             <KindIcon kind="file" /> {t("file_open_file")}
           </button>
-          <button onClick={() => setConnectOpen(true)} type="button">
+        </div>
+        <div className="placeholder-buttons">
+          <button onClick={() => setConnectOpen("server")} type="button">
             <KindIcon kind="server" /> {t("file_connect")}
           </button>
+          {/* a disabled button takes no pointer, so the reason hangs on what holds it */}
+          <span title={backend.kind === "tauri" ? undefined : t("xbox_desktop_only")}>
+            <button disabled={backend.kind !== "tauri"} onClick={() => setConnectOpen("console")} type="button">
+              <KindIcon kind="console" /> {t("file_connect_xbox")}
+            </button>
+          </span>
         </div>
         <RecentList items={recents} onOpen={(item) => void recentOpen(item)} onRemove={recentRemoveOne} />
       </div>
@@ -982,7 +1036,8 @@ export function App() {
               connected={connected}
               onClearRecent={recentClear}
               onClose={() => void closeAll()}
-              onConnect={() => setConnectOpen(true)}
+              onConnect={() => setConnectOpen("server")}
+              onConnectXbox={() => setConnectOpen("console")}
               onDisconnect={disconnect}
               onOpenFile={() => void openFileDialog()}
               onOpenFolder={() => void openFolderDialog()}
@@ -1119,6 +1174,7 @@ export function App() {
           onRecentRemove={recentRemoveOne}
           onSubmit={(drafts) => void sourcesSubmit(sourcesDialog, drafts)}
           recents={recents}
+          consoleDefault={storedGet(CONSOLE_ADDRESS_KEY) ?? ""}
           serverDefault={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}
           taken={
             sourcesDialog === "add" && multi
@@ -1129,9 +1185,10 @@ export function App() {
       )}
       {connectOpen && (
         <ConnectDialog
-          initial={storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT}
-          onCancel={() => setConnectOpen(false)}
-          onConnect={liveConnect}
+          initial={connectOpen === "console" ? (storedGet(CONSOLE_ADDRESS_KEY) ?? "") : (storedGet(SERVER_URL_KEY) ?? SERVER_URL_DEFAULT)}
+          kind={connectOpen}
+          onCancel={() => setConnectOpen(undefined)}
+          onConnect={(address, fresh) => liveConnect(connectOpen === "console" ? xbdmUrl(address) : address, fresh)}
         />
       )}
     </div>

@@ -629,6 +629,7 @@ button.toolbar-brand:focus-visible {
 .placeholder-buttons {
   display: flex;
   gap: 8px;
+  justify-content: center;
 }
 
 .live-state {
@@ -676,6 +677,12 @@ button.toolbar-brand:focus-visible {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* a pane sized by its height holds one that fills it, or, fitting its content, one as tall as that */
+.sized-y {
+  display: flex;
+  flex-direction: column;
 }
 
 .divider {
@@ -2158,26 +2165,30 @@ span.source-remove {
   color: var(--dim);
 }
 
-.source-state {
+/* how a source is doing, as a dot after its nickname; the word is in the row's tooltip */
+.source-blip {
   flex: none;
-  font-size: 11px;
-  color: var(--dim);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dim);
 }
 
-.source-state.live {
-  color: #89d185;
+.source-blip.live,
+.source-blip.ready {
+  background: #4caf50;
 }
 
-.source-state.connecting,
-.source-state.reconnecting {
-  color: #cca700;
+.source-blip.connecting,
+.source-blip.reconnecting,
+.source-blip.loading {
+  background: #cca700;
 }
 
-.source-state.failed {
-  color: var(--exclude);
+.source-blip.failed {
+  background: var(--exclude);
 }
 
-/* the cross only shows on the row the pointer is over */
 .source-item-remove {
   flex: none;
   width: 24px;
@@ -2199,9 +2210,22 @@ span.source-remove {
   color: var(--exclude);
 }
 
+/* the last row of the list, in its style: a dim row that lights up on hover */
 .source-add {
   display: flex;
   gap: 6px;
   align-items: center;
-  margin: 6px;
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+}
+
+.source-add:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
 }

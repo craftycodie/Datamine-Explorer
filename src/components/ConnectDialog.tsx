@@ -2,16 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../localization";
 import { KindIcon } from "./FileMenu";
 
-// Asks for an event server's address. The caller remembers the last one used.
+// Asks for an event server's address, or an Xbox 360's. The caller remembers the last one used.
 export function ConnectDialog({
   initial,
+  kind,
   onCancel,
   onConnect,
 }: {
   initial: string;
+  kind: "server" | "console";
   onCancel: () => void;
-  onConnect: (url: string, fresh: boolean) => void;
+  onConnect: (address: string, fresh: boolean) => void;
 }) {
+  const xbox = kind === "console";
   const t = useT();
   const [url, setUrl] = useState(initial);
   const [fresh, setFresh] = useState(false);
@@ -28,7 +31,7 @@ export function ConnectDialog({
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div
-        aria-label={t("connect_aria")}
+        aria-label={t(xbox ? "connect_xbox_aria" : "connect_aria")}
         aria-modal="true"
         className="dialog"
         onKeyDown={(e) => {
@@ -42,16 +45,22 @@ export function ConnectDialog({
         role="dialog"
       >
         <div className="dialog-title">
-          <KindIcon kind="server" /> {t("connect_title")}
+          <KindIcon kind={kind} /> {t(xbox ? "connect_xbox_title" : "connect_title")}
         </div>
         <label className="dialog-field">
-          {t("connect_url")}
-          <input onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:32557" ref={input} spellCheck={false} value={url} />
+          {t(xbox ? "connect_xbox_address" : "connect_url")}
+          <input
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder={xbox ? "192.168.1.100" : "http://127.0.0.1:32557"}
+            ref={input}
+            spellCheck={false}
+            value={url}
+          />
         </label>
-        <div className="hint">{t("connect_url_hint")}</div>
+        <div className="hint">{t(xbox ? "connect_xbox_hint" : "connect_url_hint")}</div>
         <label className="dialog-check">
           <input checked={fresh} onChange={(e) => setFresh(e.target.checked)} type="checkbox" />
-          {t("connect_fresh")}
+          {t(xbox ? "connect_xbox_fresh" : "connect_fresh")}
         </label>
         <div className="dialog-buttons">
           <button className="primary" disabled={!url.trim()} onClick={submit} type="button">

@@ -4,6 +4,8 @@
 import type { LiveState, LiveStatus } from "../lib/types";
 import type { Text } from "../localization";
 import { LiveConnection } from "./live-connection";
+import { isXbdmUrl } from "../lib/xbdm";
+import { XbdmConnection, type XbdmHost } from "./xbdm-connection";
 import { BACKLOG_ALL, BACKLOG_MARGIN, LiveSession, type ResumeState, runOf } from "./live-session";
 import { SPOOL_FORMAT } from "./spool-line";
 import type { ServerHello } from "./live-types";
@@ -32,6 +34,8 @@ export interface FeedHooks {
   grown(): Promise<void>;
   status(status: LiveStatus): void;
   memoryBytes(): number;
+  // the desktop app's links to Xbox 360s, for an xbdm:// source
+  xbdm?: XbdmHost;
 }
 
 function pad(n: number, width = 2): string {
@@ -67,12 +71,17 @@ async function resumeStateOf(opened: SpoolOpened): Promise<ResumeState> {
   };
 }
 
+// Feeds that are letting go of their spool, worker-wide. A feed can carry on in the spool another one is
+// still closing (a view of one source handing over to a view of several, a source taken out and put back),
+// and the spool's files must be closed by the old before the new opens them.
+const stopping = new Set<Promise<void>>();
+
 export class LiveFeed {
   state: LiveState = "connecting";
   readonly session: LiveSession;
   private error: Text | undefined;
   private prefix: string | undefined;
-  private connection: LiveConnection;
+  private connection: LiveConnection | XbdmConnection;
   private writer: SpoolWriter;
   private timer: ReturnType<typeof setInterval> | undefined;
   private received = 0;
@@ -83,8 +92,6 @@ export class LiveFeed {
     readonly url: string,
     private fresh: boolean,
     private spool: SpoolHost | undefined,
-    // the connection before this one, still writing
-    private after: Promise<void>,
     private hooks: FeedHooks
   ) {
     this.writer = new SpoolWriter(
@@ -103,7 +110,7 @@ export class LiveFeed {
       }
     );
     this.session = new LiveSession(this.writer);
-    this.connection = new LiveConnection(url, {
+    const events: ConstructorParameters<typeof LiveConnection>[1] = {
       entry: (entry) => {
         if (this.session.entryApply(entry)) {
           this.received++;
@@ -117,7 +124,8 @@ export class LiveFeed {
         this.error = error;
         this.statusEmit();
       },
-    });
+    };
+    this.connection = isXbdmUrl(url) ? new XbdmConnection(url, events, hooks.xbdm) : new LiveConnection(url, events);
   }
 
   private spoolStart(): { name: string; head: string } {
@@ -139,7 +147,7 @@ export class LiveFeed {
   // entries to ask for.
   private async prefixFound(prefix: string, info: ServerHello): Promise<number> {
     this.prefix = prefix;
-    await this.after;
+    await Promise.all(stopping);
     if (this.fresh || !this.spool) {
       return BACKLOG_ALL;
     }
@@ -187,7 +195,13 @@ export class LiveFeed {
     this.connection.close();
     clearInterval(this.timer);
     this.timer = undefined;
-    await this.writer.close();
+    const closed = this.writer.close().catch(() => undefined);
+    stopping.add(closed);
+    try {
+      await closed;
+    } finally {
+      stopping.delete(closed);
+    }
     if (this.state !== "closed") {
       this.state = "closed";
     }

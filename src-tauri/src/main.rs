@@ -4,6 +4,7 @@
 mod files;
 mod spool;
 mod watch;
+mod xbdm;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -245,6 +246,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(ExplorerState::default())
+        .manage(xbdm::XbdmState::default())
         .setup(|_app| {
             // spools left by earlier runs, before this one makes any
             std::thread::spawn(|| spool::cleanup(&spool::spool_dir(), &std::collections::HashSet::new()));
@@ -265,7 +267,10 @@ fn main() {
             spool_resume,
             spool_append,
             spool_finish,
-            spool_copy
+            spool_copy,
+            xbdm::xbdm_open,
+            xbdm::xbdm_close,
+            xbdm::xbdm_close_all
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Datamine Explorer");

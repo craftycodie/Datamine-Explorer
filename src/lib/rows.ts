@@ -20,6 +20,8 @@ export interface RowSource {
   version: number;
   // The worker sent a new view; called with the message as it arrives.
   viewChanged(view: ViewState): void;
+  // Something else is open: nothing held is drawn any more, not even as a stand-in.
+  clear(): void;
 }
 
 export function useRows(client: LogClient | undefined): RowSource {
@@ -39,23 +41,26 @@ export function useRows(client: LogClient | undefined): RowSource {
 
   const viewChanged = useCallback((view: ViewState) => {
     const s = state.current;
+    // Rows that may be out of date are drawn as they were until the new ones arrive: dropping them would
+    // leave the table blank where they are for a frame or two, which flickers at a busy tail.
     let from = view.dirtyFrom;
     if (view.version !== s.viewVersion) {
-      // rows moved: nothing from before applies
+      // rows moved: none of them is current, but the old ones stand in for a moment
       s.viewVersion = view.version;
-      s.fresh.clear();
-      s.stale.clear();
+      s.stale = s.fresh;
+      s.fresh = new Map();
       from = 0;
     } else if (view.flags !== s.flags) {
-      // same rows, new match marks: keep drawing the old ones until the new arrive
+      // same rows, new match marks
       for (const [row, entry] of s.fresh) {
         s.stale.set(row, entry);
       }
       s.fresh.clear();
       from = 0;
     } else {
-      for (const row of s.fresh.keys()) {
+      for (const [row, entry] of s.fresh) {
         if (row >= from) {
+          s.stale.set(row, entry);
           s.fresh.delete(row);
         }
       }
@@ -65,6 +70,15 @@ export function useRows(client: LogClient | undefined): RowSource {
     if (s.dirty.length > DIRTY_LOG_LENGTH) {
       s.dirty.shift();
     }
+    s.pending.clear();
+    s.version++;
+    setVersion(s.version);
+  }, []);
+
+  const clear = useCallback(() => {
+    const s = state.current;
+    s.fresh.clear();
+    s.stale.clear();
     s.pending.clear();
     s.version++;
     setVersion(s.version);
@@ -127,5 +141,5 @@ export function useRows(client: LogClient | undefined): RowSource {
     [client]
   );
 
-  return useMemo(() => ({ divider, ensure, get, version, viewChanged }), [divider, ensure, get, version, viewChanged]);
+  return useMemo(() => ({ clear, divider, ensure, get, version, viewChanged }), [clear, divider, ensure, get, version, viewChanged]);
 }

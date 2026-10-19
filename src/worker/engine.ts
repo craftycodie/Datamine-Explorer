@@ -25,6 +25,7 @@ import { matcherCreate } from "./search";
 import { Sidecar, sidecarPathOf } from "./sidecar";
 import { CHUNK_BYTES, type ByteSource } from "./source";
 import type { SpoolHost } from "./spool-writer";
+import type { XbdmHost } from "./xbdm-connection";
 import { DatamineStore, type EntryStore, MemoryStore, TextStore } from "./stores";
 import { TextIndexer } from "./text-indexer";
 import { View } from "./view";
@@ -34,6 +35,8 @@ export interface Host {
   stat(path: string): Promise<FileStat>;
   // where a live session is spooled to; missing where there is nowhere to write
   spool?: SpoolHost;
+  // the desktop app's links to Xbox 360s; missing in a browser
+  xbdm?: XbdmHost;
 }
 
 const HEAD_BYTES = 64 * 1024;
@@ -148,8 +151,6 @@ export class LogEngine {
   private lastEmit = 0;
   private cache = new Map<number, LogEntry>();
   private feed: LiveFeed | undefined;
-  // the last connection being let go of, writing what it has received
-  private feedStopping: Promise<void> = Promise.resolve();
   // `<file>.json` of the log shown, when there is one
   private sidecar: Sidecar | undefined;
 
@@ -465,11 +466,10 @@ export class LogEngine {
   // The entries are spooled to a log file that is indexed like any other as it grows; the connection
   // only writes it. With an older spool of the same server, that is opened first and carried on in.
   connect(id: number, url: string, fresh: boolean) {
-    const stopping = this.feedStopping;
     const generation = this.begin(id, url);
     this.busy = false;
     this.formatName = "";
-    const feed = new LiveFeed(url, fresh, this.host.spool, stopping, {
+    const feed = new LiveFeed(url, fresh, this.host.spool, {
       grown: async () => {
         if (generation === this.generation) {
           await this.refresh(id);
@@ -478,6 +478,7 @@ export class LogEngine {
       memoryBytes: () => this.index.offsets.length * 30 + (this.sidecar?.memoryBytes() ?? 0),
       open: (path, format) => this.liveOpen(generation, path, format),
       status: (status) => this.feedStatus(generation, status),
+      xbdm: this.host.xbdm,
     });
     this.feed = feed;
     this.emit({ id, type: "done" });
@@ -542,11 +543,12 @@ export class LogEngine {
     }
   }
 
-  // Lets go of the connection of the source being left; what it has received is still written.
+  // Lets go of the connection of the source being left; what it has received is still written, and a
+  // feed of the same server waits for that (live-feed.ts).
   private feedStop() {
     const feed = this.feed;
     this.feed = undefined;
-    this.feedStopping = feed ? feed.stop().catch(() => undefined) : Promise.resolve();
+    void feed?.stop().catch(() => undefined);
   }
 
   private feedStatus(generation: number, status: LiveStatus) {

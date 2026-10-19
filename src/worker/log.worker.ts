@@ -6,6 +6,7 @@ import { isOpfsPath } from "../lib/opfs";
 import { OpfsSpool } from "./opfs-spool";
 import type { HostCall, SpoolMode, WorkerRequest, WorkerResponse } from "./protocol";
 import type { SpoolHost } from "./spool-writer";
+import { type XbdmHost, xbdmDispatch } from "./xbdm-connection";
 
 function send(message: WorkerResponse, transfer: Transferable[] = []) {
   postMessage(message, { transfer });
@@ -39,6 +40,11 @@ const tauriSpool: SpoolHost = {
   resume: (path) => hostCall<undefined>({ kind: "spoolResume", path }),
 };
 
+const xbdm: XbdmHost = {
+  close: (link) => hostCall<undefined>({ kind: "xbdmClose", link }),
+  open: (link, address) => hostCall<undefined>({ host: address, kind: "xbdmOpen", link }),
+};
+
 const host: Host = {
   read: (path, offset, length) =>
     isOpfsPath(path) ? opfs.read(path, offset, length) : hostCall<Uint8Array>({ kind: "read", length, offset, path }),
@@ -46,6 +52,7 @@ const host: Host = {
     return spoolMode === "tauri" ? tauriSpool : opfs;
   },
   stat: (path) => (isOpfsPath(path) ? opfs.stat(path) : hostCall<FileStat>({ kind: "stat", path })),
+  xbdm,
 };
 
 const engine = new LogEngine(host, send);
@@ -96,6 +103,9 @@ onmessage = (event: MessageEvent<WorkerRequest>) => {
       engine.filtersSet(request.filters, request.onlyMatches);
       merge.filtersSet(request.filters, request.onlyMatches);
       break;
+    case "sourceFilter":
+      merge.sourceFilterSet(request.include, request.exclude);
+      break;
     case "search":
       engine.searchSet(request.spec);
       merge.searchSet(request.spec);
@@ -105,6 +115,9 @@ onmessage = (event: MessageEvent<WorkerRequest>) => {
         (value) => send({ req: request.req, type: "result", value }),
         (error) => send({ message: error instanceof Error ? error.message : String(error), req: request.req, type: "failed" })
       );
+      break;
+    case "xbdm":
+      xbdmDispatch(request.event);
       break;
     case "hostResult": {
       const pending = waiting.get(request.callId);
