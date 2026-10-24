@@ -18,6 +18,15 @@ export interface SpoolSaved {
   root?: string;
 }
 
+// Something dropped on the window, opened the way a picked root is.
+export interface Dropped {
+  isFile: boolean;
+  root: string;
+}
+
+// Files dragged over the window: `over` while they are held above it, `leave` when they go, `drop` when let go of.
+export type DropEvent = { kind: "over" } | { kind: "leave" } | { kind: "drop"; dropped: Dropped[] };
+
 export interface Backend {
   kind: "tauri" | "browser";
   // Opens `root` as a folder and lists it.
@@ -37,6 +46,8 @@ export interface Backend {
   watch(root: string): Promise<void>;
   unwatch(): Promise<void>;
   onChanged(callback: (event: ChangeEvent) => void): Promise<() => void>;
+  // Files and folders dragged onto the window. A browser that cannot hand over a folder drops only files.
+  onDrop(callback: (event: DropEvent) => void): Promise<() => void>;
   // The native dialog (Tauri) or the browser's. Gives the root to pass to listTree.
   pickFolder(): Promise<string | undefined>;
   // The same for one file; the root goes to fileInfo. With `keep`, what was picked before keeps its
@@ -113,6 +124,19 @@ function tauriBackend(): Backend {
     async onChanged(callback) {
       const { listen } = await import("@tauri-apps/api/event");
       return listen<ChangeEvent>(CHANGED_EVENT, (event) => callback(event.payload));
+    },
+    async onDrop(callback) {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      const { invoke } = await import("@tauri-apps/api/core");
+      return getCurrentWebview().onDragDropEvent(({ payload }) => {
+        if (payload.type !== "drop") {
+          callback({ kind: payload.type === "leave" ? "leave" : "over" });
+          return;
+        }
+        void Promise.all(
+          payload.paths.map(async (root) => ({ isFile: (await invoke<string>("path_kind", { path: root })) === "file", root }))
+        ).then((dropped) => callback({ dropped, kind: "drop" }));
+      });
     },
     async onXbdm(callback) {
       const { listen } = await import("@tauri-apps/api/event");
@@ -244,6 +268,9 @@ type PermissionedFileHandle = FileSystemFileHandle & Permissions;
 interface DirectoryHandleEntries {
   entries(): AsyncIterable<[string, FileSystemHandle]>;
 }
+
+// Chromium hands a dropped file or folder over as a live handle; other browsers only as a File.
+type HandleItem = DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> };
 
 type PickerWindow = Window & {
   showDirectoryPicker?: (options: { mode: "read" }) => Promise<PermissionedHandle>;
@@ -696,6 +723,73 @@ function browserBackend(): Backend {
     async onChanged(callback) {
       listeners.add(callback);
       return () => listeners.delete(callback);
+    },
+    async onDrop(callback) {
+      // only drags that carry files; text or a link dragged about the page is left alone
+      const carriesFiles = (event: DragEvent) => event.dataTransfer?.types.includes("Files") ?? false;
+      // enter and leave fire for every element crossed on the way
+      let depth = 0;
+      const onEnter = (event: DragEvent) => {
+        if (carriesFiles(event)) {
+          depth++;
+          callback({ kind: "over" });
+        }
+      };
+      const onOver = (event: DragEvent) => {
+        if (carriesFiles(event) && event.dataTransfer) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }
+      };
+      const onLeave = (event: DragEvent) => {
+        if (carriesFiles(event) && --depth <= 0) {
+          depth = 0;
+          callback({ kind: "leave" });
+        }
+      };
+      const onDrop = (event: DragEvent) => {
+        if (!carriesFiles(event)) {
+          return;
+        }
+        // without this the browser opens the file in place of the page
+        event.preventDefault();
+        depth = 0;
+        // the items can only be read during the event, so everything is asked for now
+        const items = [...(event.dataTransfer?.items ?? [])].filter((item) => item.kind === "file");
+        const handles = items.map((item) => (item as HandleItem).getAsFileSystemHandle?.().catch(() => null));
+        const files = items.map((item) => (item.webkitGetAsEntry()?.isDirectory ? null : item.getAsFile()));
+        void (async () => {
+          const dropped: Dropped[] = [];
+          for (const [k, pending] of handles.entries()) {
+            const handle = await pending;
+            const file = files[k];
+            if (handle?.kind === "directory") {
+              nameTake(handle.name);
+              picked.set(handle.name, handle as FileSystemDirectoryHandle);
+              dropped.push({ isFile: false, root: handle.name });
+            } else if (handle) {
+              const name = nameFor(handle.name, dropped.length > 0);
+              fileHandles.set(name, handle as FileSystemFileHandle);
+              dropped.push({ isFile: true, root: name });
+            } else if (file) {
+              const name = nameFor(file.name, dropped.length > 0);
+              fileSnapshots.set(name, file);
+              dropped.push({ isFile: true, root: name });
+            }
+          }
+          callback({ dropped, kind: "drop" });
+        })();
+      };
+      window.addEventListener("dragenter", onEnter);
+      window.addEventListener("dragover", onOver);
+      window.addEventListener("dragleave", onLeave);
+      window.addEventListener("drop", onDrop);
+      return () => {
+        window.removeEventListener("dragenter", onEnter);
+        window.removeEventListener("dragover", onOver);
+        window.removeEventListener("dragleave", onLeave);
+        window.removeEventListener("drop", onDrop);
+      };
     },
     onXbdm: async () => () => undefined,
     xbdmCloseAll: async () => undefined,

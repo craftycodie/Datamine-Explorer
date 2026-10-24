@@ -276,6 +276,7 @@
   "placeholder_pick": "Pick a file from the tree.",
   "placeholder_indexing": "Indexing {{name}}... {{percent}}%",
   "placeholder_no_entries": "No entries in {{name}}.",
+  "drop_prompt": "Drop to open",
   "splash_prompt": "Open a file, folder or server",
   "splash_embedded": "This embedded browser view can't read files from your disk, so opening a file or folder may fail. Open this page in Chrome or Edge, or use the desktop app. Connecting to a server works here.",
   "status_nothing_open": "Nothing open",

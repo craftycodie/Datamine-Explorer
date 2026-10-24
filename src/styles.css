@@ -308,6 +308,21 @@ button.toolbar-brand:focus-visible {
 }
 
 /* shown on the start screen in embedded views (VS Code's Simple Browser) that cannot read picked files */
+.drop-overlay {
+  position: fixed;
+  inset: 8px;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: 18px;
+  background: color-mix(in srgb, var(--bg) 88%, var(--accent));
+  border: 2px dashed var(--accent-hi);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
 .splash-warning {
   max-width: 460px;
   padding: 8px 12px;

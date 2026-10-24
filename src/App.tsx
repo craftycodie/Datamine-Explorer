@@ -610,6 +610,41 @@ export function App() {
     };
   }, [refresh, treeLoad]);
 
+  // Dropped on the window: one file or folder opens as if picked, several files open together.
+  const [dropOver, setDropOver] = useState(false);
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let cancelled = false;
+    void backend
+      .onDrop((event) => {
+        setDropOver(event.kind === "over");
+        if (event.kind !== "drop") {
+          return;
+        }
+        const files = event.dropped.filter((one) => one.isFile);
+        if (event.dropped.length === 1) {
+          const [one] = event.dropped;
+          void (one.isFile ? fileOpen(one.root) : folderOpen(one.root));
+        } else if (files.length > 0) {
+          void sourcesSubmit(
+            "open",
+            files.map((one) => ({ kind: "file", name: baseName(one.root), root: one.root }))
+          );
+        }
+      })
+      .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+        } else {
+          off = unlisten;
+        }
+      });
+    return () => {
+      cancelled = true;
+      off?.();
+    };
+  }, [fileOpen, folderOpen, sourcesSubmit]);
+
   // The worker keeps the filters and the search between files, but a new worker starts without them.
   useEffect(() => {
     client?.filters(filters, onlyMatches);
@@ -1020,6 +1055,7 @@ export function App() {
 
   return (
     <div className="app">
+      {dropOver && <div className="drop-overlay">{t("drop_prompt")}</div>}
       <Toolbar
         canSave={Boolean(live && liveStatus?.spoolPath)}
         connected={connected}

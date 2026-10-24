@@ -276,6 +276,7 @@
   "placeholder_pick": "ツリーからファイルを選んでください。",
   "placeholder_indexing": "{{name}} のインデックスを作成中... {{percent}}%",
   "placeholder_no_entries": "{{name}} にエントリーはありません。",
+  "drop_prompt": "ドロップして開く",
   "splash_prompt": "ファイル、フォルダー、またはサーバーを開いてください",
   "splash_embedded": "この埋め込みブラウザー表示ではディスク上のファイルを読み込めないため、ファイルやフォルダーを開けない場合があります。このページを Chrome または Edge で開くか、デスクトップ版を使用してください。サーバーへの接続はここでも使えます。",
   "status_nothing_open": "何も開いていません",
