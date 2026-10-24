@@ -1,0 +1,1 @@
+import{i as a}from"./index-BIMRAv4_.js";async function f(e={}){return typeof e=="object"&&Object.freeze(e),await a("plugin:dialog|open",{options:e})}async function i(e={}){return typeof e=="object"&&Object.freeze(e),await a("plugin:dialog|save",{options:e})}export{f as open,i as save};
